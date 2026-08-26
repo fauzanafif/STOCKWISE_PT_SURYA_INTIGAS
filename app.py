@@ -223,9 +223,12 @@ def render_sidebar(df: pd.DataFrame):
 
     lt_min_data = int(df["Lead Time"].min()) if not df.empty else 0
     lt_max_data = int(df["Lead Time"].max()) if not df.empty else 0
-    if lt_min_data == lt_max_data:
-        lt_max_data = lt_min_data + 1
-    lead_time_range = st.sidebar.slider("Range Lead Time", lt_min_data, lt_max_data, (lt_min_data, lt_max_data))
+
+    st.sidebar.caption("Range Lead Time")
+    lt_col1, lt_col2 = st.sidebar.columns(2)
+    lt_min = lt_col1.number_input("Dari", min_value=0, value=lt_min_data, step=1, key="lead_time_filter_min")
+    lt_max = lt_col2.number_input("Sampai", min_value=0, value=lt_max_data, step=1, key="lead_time_filter_max")
+    lead_time_range = (lt_min, lt_max)
 
     st.sidebar.divider()
     st.sidebar.header("Pengaturan Prioritas")
@@ -531,7 +534,7 @@ def main():
                 color = priority_colors.get(val)
                 return f"background-color:{color}26; color:{color}; font-weight:700;" if color else ""
 
-            styled = unsafe[cols].style.applymap(_style_priority, subset=["Priority Level"])
+            styled = unsafe[cols].style.map(_style_priority, subset=["Priority Level"])
             st.dataframe(styled, use_container_width=True, hide_index=True)
 
     with tab4:
