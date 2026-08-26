@@ -46,11 +46,50 @@ CALCULATED_COLUMNS = [
 
 REFERENCE_COLUMNS = ["Blueprint IMG", "Blueprint Detail PDF", "Blueprint 3D View"]
 
+# Keyword sets used to fuzzy-match a canonical column when the source header
+# isn't an exact match (e.g. "SISA STOK (22/08/2026)" instead of "Sisa Stok").
+# Every keyword must appear (as a substring) in the source header, checked in
+# this order so more specific targets (e.g. "Letak Rak") don't get stolen by
+# a looser one matched earlier.
+CANONICAL_KEYWORDS = {
+    "Kode Barang": ["KODE", "BARANG"],
+    "Deskripsi Barang": ["DESKRIPSI"],
+    "Safety Stock": ["SAFETY", "STOCK"],
+    "Sisa Stok": ["SISA", "STOK"],
+    "Lead Time": ["LEAD", "TIME"],
+    "Kategori Induk": ["KATEGORI", "INDUK"],
+    "Kategori Anak 1": ["KATEGORI", "ANAK", "1"],
+    "Kategori Anak 2": ["KATEGORI", "ANAK", "2"],
+    "Kategori Anak 3": ["KATEGORI", "ANAK", "3"],
+    "UoM": ["UOM"],
+    "Perlu Blueprint?": ["PERLU", "BLUEPRINT"],
+    "Nama Alias": ["ALIAS"],
+    "Letak Gudang": ["LETAK", "GUDANG"],
+    "Letak Rak": ["LETAK", "RAK"],
+    "Blueprint IMG": ["BLUEPRINT", "IMG"],
+    "Blueprint Detail PDF": ["BLUEPRINT", "DETAIL"],
+    "Blueprint 3D View": ["BLUEPRINT", "3D"],
+}
+
+HEADER_ANCHOR = "kode barang"
+MAX_HEADER_SCAN_ROWS = 50
+
 _NUMBER_PATTERN = re.compile(r"-?\d+(?:[.,]\d+)?")
 
 
 def _normalize_header(name: str) -> str:
     return re.sub(r"\s+", " ", str(name).strip()).lower()
+
+
+def find_column(df: pd.DataFrame, keywords: list, exclude: set = frozenset()):
+    """Return the first column whose header contains every keyword (order preserved)."""
+    for col in df.columns:
+        if col in exclude:
+            continue
+        col_upper = str(col).strip().upper()
+        if all(str(kw).upper() in col_upper for kw in keywords):
+            return col
+    return None
 
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -62,6 +101,38 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         if key in lookup:
             rename_map[col] = lookup[key]
     return df.rename(columns=rename_map)
+
+
+def fuzzy_match_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Catch headers that vary slightly from the canonical name (extra words,
+    dates, punctuation) via keyword matching, e.g. 'SISA STOK (22/08/2026)' ->
+    'Sisa Stok'. Only applied to columns not already renamed by an exact match.
+    """
+    df = df.copy()
+    claimed = {c for c in df.columns if c in CANONICAL_COLUMNS}
+    rename_map = {}
+    for canonical, keywords in CANONICAL_KEYWORDS.items():
+        if canonical in df.columns:
+            continue
+        match = find_column(df, keywords, exclude=claimed)
+        if match is not None:
+            rename_map[match] = canonical
+            claimed.add(match)
+    return df.rename(columns=rename_map)
+
+
+def detect_header_row(uploaded_file, max_scan_rows: int = MAX_HEADER_SCAN_ROWS):
+    """Find the row index (0-based) that holds the real header, by scanning
+    the first few rows for a cell that reads 'Kode Barang'. Returns None if
+    no such row is found within the scan window.
+    """
+    uploaded_file.seek(0)
+    preview = pd.read_excel(uploaded_file, header=None, nrows=max_scan_rows, engine="openpyxl")
+    for idx in range(len(preview)):
+        row_values = [_normalize_header(v) for v in preview.iloc[idx].tolist()]
+        if HEADER_ANCHOR in row_values:
+            return idx
+    return None
 
 
 def validate_columns(df: pd.DataFrame) -> list:
@@ -109,14 +180,31 @@ def ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
 def load_excel(uploaded_file):
     """Read an uploaded Excel file into a DataFrame.
 
+    The header row doesn't have to be row 1 — some exports have a title and
+    blank rows above it (e.g. "Database Gudang ..." followed by empty rows),
+    so the real header row is located by scanning for a "Kode Barang" cell.
+
     Returns (df, error_message). df is None if reading failed.
     """
     try:
-        raw = pd.read_excel(uploaded_file, engine="openpyxl")
+        header_row = detect_header_row(uploaded_file)
+    except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
+        return None, f"Gagal membaca file Excel: {exc}"
+
+    if header_row is None:
+        return None, (
+            f"Baris header tidak ditemukan (mencari kolom 'Kode Barang' pada "
+            f"{MAX_HEADER_SCAN_ROWS} baris pertama file Excel)."
+        )
+
+    try:
+        uploaded_file.seek(0)
+        raw = pd.read_excel(uploaded_file, header=header_row, engine="openpyxl")
     except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
         return None, f"Gagal membaca file Excel: {exc}"
 
     df = normalize_columns(raw)
+    df = fuzzy_match_columns(df)
     missing = validate_columns(df)
     if missing:
         cols = ", ".join(f"`{c}`" for c in missing)
