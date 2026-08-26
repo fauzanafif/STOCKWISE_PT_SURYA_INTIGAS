@@ -1,4 +1,7 @@
 """STOCKWISE — Inventory dashboard: upload, edit, recalculate, visualize."""
+import base64
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
@@ -18,7 +21,19 @@ from utils.excel_handler import build_template_bytes, load_dropdown_options, loa
 from utils.insights import generate_insights
 from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING
 
-st.set_page_config(page_title="STOCKWISE", page_icon="📦", layout="wide")
+LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
+
+
+@st.cache_data
+def _logo_data_uri() -> str:
+    """Base64 data URI for the company logo, so it can be embedded directly in
+    injected HTML (a plain relative <img src> won't load — Streamlit doesn't
+    serve arbitrary local files over HTTP)."""
+    encoded = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+st.set_page_config(page_title="STOCKWISE", page_icon=str(LOGO_PATH), layout="wide")
 
 st.markdown(
     """
@@ -34,8 +49,8 @@ st.markdown(
         display: flex; align-items: center; gap: 14px;
         margin-bottom: 0.25rem;
     }
-    .sw-hero .sw-hero-emoji {
-        font-size: 2.1rem; line-height: 1;
+    .sw-hero .sw-hero-logo {
+        height: 42px; width: 42px; object-fit: contain;
     }
     .sw-hero h1 { margin: 0; font-size: 1.85rem; font-weight: 800; letter-spacing: -0.02em; }
     .sw-hero-caption { color: #898781; font-size: 0.95rem; margin: 2px 0 1.2rem 0; }
@@ -361,7 +376,7 @@ def main():
     init_state()
 
     st.markdown(
-        '<div class="sw-hero"><span class="sw-hero-emoji">📦</span><h1>STOCKWISE</h1></div>'
+        f'<div class="sw-hero"><img class="sw-hero-logo" src="{_logo_data_uri()}"><h1>STOCKWISE</h1></div>'
         '<div class="sw-hero-caption">Upload, edit, pantau stok — semuanya update otomatis, gak perlu refresh.</div>',
         unsafe_allow_html=True,
     )
