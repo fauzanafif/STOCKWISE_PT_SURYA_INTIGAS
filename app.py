@@ -51,6 +51,25 @@ def init_state():
             st.session_state[key] = default
 
 
+def filter_signature(filters: dict) -> str:
+    """A stable string key for the current filter combination.
+
+    st.data_editor keeps its own internal state per widget `key`; if the key
+    stays fixed while the underlying row set changes shape (a filter changed),
+    Streamlit can keep showing the editor's stale internal state instead of
+    the newly filtered rows. Deriving the key from the filters forces a fresh
+    widget whenever the visible row set actually changes, while edits already
+    made are safe because they were merged into full_df before this reruns.
+    """
+    parts = []
+    for k in sorted(filters):
+        v = filters[k]
+        if isinstance(v, (list, tuple)):
+            v = tuple(sorted(v))
+        parts.append(f"{k}={v}")
+    return "|".join(parts)
+
+
 def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     result = df
     if filters["kategori_induk"]:
@@ -72,18 +91,22 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     return result
 
 
+def _non_blank_options(df: pd.DataFrame, col: str) -> list:
+    return sorted(v for v in df[col].dropna().unique() if str(v).strip())
+
+
 def render_sidebar(df: pd.DataFrame):
     st.sidebar.header("Filter")
 
-    kategori_induk = st.sidebar.multiselect("Kategori Induk", sorted(df["Kategori Induk"].dropna().unique()))
-    kategori_anak1 = st.sidebar.multiselect("Kategori Anak 1", sorted(df["Kategori Anak 1"].dropna().unique()))
-    gudang = st.sidebar.multiselect("Letak Gudang", sorted(df["Letak Gudang"].dropna().unique()))
-    status = st.sidebar.multiselect("Status", sorted(df["Status"].dropna().unique()))
+    kategori_induk = st.sidebar.multiselect("Kategori Induk", _non_blank_options(df, "Kategori Induk"))
+    kategori_anak1 = st.sidebar.multiselect("Kategori Anak 1", _non_blank_options(df, "Kategori Anak 1"))
+    gudang = st.sidebar.multiselect("Letak Gudang", _non_blank_options(df, "Letak Gudang"))
+    status = st.sidebar.multiselect("Status", _non_blank_options(df, "Status"))
     kode_search = st.sidebar.text_input("Cari Kode Barang")
     desk_search = st.sidebar.text_input("Cari Deskripsi Barang")
 
-    lt_min_data = int(df["Lead Time"].min()) if not df["Lead Time"].empty else 0
-    lt_max_data = int(df["Lead Time"].max()) if not df["Lead Time"].empty else 0
+    lt_min_data = int(df["Lead Time"].min()) if not df.empty else 0
+    lt_max_data = int(df["Lead Time"].max()) if not df.empty else 0
     if lt_min_data == lt_max_data:
         lt_max_data = lt_min_data + 1
     lead_time_range = st.sidebar.slider("Range Lead Time", lt_min_data, lt_max_data, (lt_min_data, lt_max_data))
@@ -188,7 +211,8 @@ def main():
     with tab2:
         st.subheader("Data Inventory")
         st.caption("Edit langsung di tabel. Selisih, Status, dan kolom analisis lain dihitung ulang otomatis.")
-        edited_view = render_data_editor(filtered_view, options_df=full_df)
+        editor_key = f"inventory_editor::{filter_signature(filters)}"
+        edited_view = render_data_editor(filtered_view, options_df=full_df, key=editor_key)
         full_df = merge_edits(full_df, filtered_view, edited_view)
         full_df = recalculate(full_df, st.session_state.lead_time_threshold)
         st.session_state.df = full_df

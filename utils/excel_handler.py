@@ -35,23 +35,6 @@ REQUIRED_COLUMNS = [
 
 NUMERIC_COLUMNS = ["Safety Stock", "Sisa Stok", "Lead Time"]
 
-EDITABLE_COLUMNS = [
-    "Kode Barang",
-    "Kategori Induk",
-    "Kategori Anak 1",
-    "Kategori Anak 2",
-    "Kategori Anak 3",
-    "Deskripsi Barang",
-    "UoM",
-    "Perlu Blueprint?",
-    "Nama Alias",
-    "Letak Gudang",
-    "Letak Rak",
-    "Safety Stock",
-    "Sisa Stok",
-    "Lead Time",
-]
-
 CALCULATED_COLUMNS = [
     "Selisih",
     "Status",
@@ -166,7 +149,7 @@ def to_export_bytes(df: pd.DataFrame) -> bytes:
             width = max(12, min(40, len(str(col_name)) + 4))
             worksheet.set_column(col_idx, col_idx, width)
 
-        if "Status" in export_df.columns:
+        if "Status" in export_df.columns and len(export_df) > 0:
             status_col = export_df.columns.get_loc("Status")
             n_rows = len(export_df)
             aman_fmt = workbook.add_format({"bg_color": "#D1FAE5", "font_color": "#065F46"})
