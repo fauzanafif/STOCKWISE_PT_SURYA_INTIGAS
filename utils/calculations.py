@@ -39,23 +39,20 @@ def compute_priority_score(df: pd.DataFrame, lead_time_weight: float = 1.0, defi
     return np.where(unsafe, score, 0.0)
 
 
-def compute_priority_level(df: pd.DataFrame) -> pd.Series:
-    levels = pd.Series("-", index=df.index, dtype=object)
+def compute_priority_level(df: pd.DataFrame, lead_time_threshold: int) -> pd.Series:
+    """LOW = stok aman. Untuk yang TIDAK AMAN: HIGH kalau defisitnya lebih besar
+    dari defisit tipikal barang tidak aman lain, atau lead time-nya tinggi;
+    selain itu MEDIUM.
+    """
+    levels = pd.Series("LOW", index=df.index, dtype=object)
     mask = df["Status"] == STATUS_TIDAK_AMAN
     if mask.sum() == 0:
         return levels
 
-    scores = df.loc[mask, "Priority Score"]
-    if scores.nunique() >= 3:
-        try:
-            binned = pd.qcut(scores, q=3, labels=["LOW", "MEDIUM", "HIGH"], duplicates="drop")
-            levels.loc[mask] = binned.astype(str)
-            return levels
-        except ValueError:
-            pass
-
-    median = scores.median()
-    levels.loc[mask] = np.where(scores > median, "HIGH", np.where(scores == median, "MEDIUM", "LOW"))
+    levels.loc[mask] = "MEDIUM"
+    defisit_median = df.loc[mask, "Defisit"].median()
+    high_mask = mask & ((df["Defisit"] >= defisit_median) | (df["Lead Time"] >= lead_time_threshold))
+    levels.loc[high_mask] = "HIGH"
     return levels
 
 
@@ -72,6 +69,6 @@ def recalculate(df: pd.DataFrame, lead_time_threshold: int = DEFAULT_LEAD_TIME_T
     df["Status"] = compute_status(df["Selisih"])
     df["Defisit"] = compute_defisit(df)
     df["Priority Score"] = compute_priority_score(df)
-    df["Priority Level"] = compute_priority_level(df)
+    df["Priority Level"] = compute_priority_level(df, lead_time_threshold)
     df["Rekomendasi"] = compute_recommendation(df, lead_time_threshold)
     return df

@@ -1,9 +1,9 @@
 """Simple rule-based procurement recommendations."""
 import pandas as pd
 
-REC_AMAN = "AMAN — Tidak diperlukan tindakan replenishment segera."
-REC_REPLENISH = "REPLENISH — Stok berada di bawah safety stock."
-REC_PRIORITAS_TINGGI = "PRIORITAS TINGGI — Stok kurang dan lead time pengadaan tinggi."
+REC_AMAN = "Stok aman, tidak perlu replenishment segera."
+REC_REPLENISH = "Segera lakukan replenishment."
+REC_PRIORITAS_TINGGI = "Prioritas tinggi untuk procurement."
 
 
 def compute_recommendation(df: pd.DataFrame, lead_time_threshold: int) -> pd.Series:

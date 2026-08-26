@@ -249,8 +249,8 @@ def load_excel(uploaded_file):
 
     if header_row is None:
         return None, (
-            f"Baris header tidak ditemukan pada sheet '{sheet_name}' (mencari kolom "
-            f"'Kode Barang' pada {MAX_HEADER_SCAN_ROWS} baris pertama)."
+            f"Gak nemu baris header di sheet '{sheet_name}' — sudah dicek {MAX_HEADER_SCAN_ROWS} baris "
+            f"pertama, tapi gak ada yang mengandung kolom 'Kode Barang'."
         ), debug_info
 
     debug_info["header_row"] = header_row + 1  # 1-indexed, matches how Excel shows row numbers
@@ -270,9 +270,9 @@ def load_excel(uploaded_file):
         cols = ", ".join(f"`{c}`" for c in missing)
         detected = ", ".join(f"`{c}`" for c in df.columns)
         return None, (
-            f"Kolom wajib tidak ditemukan pada file Excel: {cols}.\n\n"
-            f"Sheet yang dibaca: '{sheet_name}', header pada baris ke-{header_row + 1}, "
-            f"dengan kolom yang terdeteksi: {detected}."
+            f"Kolom wajib gak ketemu di file Excel: {cols}.\n\n"
+            f"Sheet yang dibaca: '{sheet_name}', header di baris ke-{header_row + 1}, "
+            f"kolom yang kebaca: {detected}."
         ), debug_info
 
     df = ensure_columns(df)
@@ -322,9 +322,8 @@ def load_dropdown_options(uploaded_file) -> dict:
 
 TEMPLATE_TITLE = "Database Gudang STOCKWISE"
 TEMPLATE_NOTE = (
-    "Isi data mulai baris di bawah header. Baris judul/catatan di atas ini boleh "
-    "diubah atau dikosongkan — aplikasi otomatis mencari baris header (baris yang "
-    "memuat 'Kode Barang')."
+    "Isi data mulai dari baris di bawah header. Baris judul/catatan di atas ini bebas "
+    "diubah atau dikosongkan — aplikasi cari sendiri baris headernya (yang ada 'Kode Barang')."
 )
 TEMPLATE_HEADER_ROW = 4  # 0-indexed -> Excel row 5, matching the real STOCKWISE export layout
 

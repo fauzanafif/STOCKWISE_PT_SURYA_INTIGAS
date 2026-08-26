@@ -164,10 +164,18 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         result = result[result["Kategori Induk"].isin(filters["kategori_induk"])]
     if filters["kategori_anak1"]:
         result = result[result["Kategori Anak 1"].isin(filters["kategori_anak1"])]
+    if filters["kategori_anak2"]:
+        result = result[result["Kategori Anak 2"].isin(filters["kategori_anak2"])]
+    if filters["kategori_anak3"]:
+        result = result[result["Kategori Anak 3"].isin(filters["kategori_anak3"])]
+    if filters["uom"]:
+        result = result[result["UoM"].isin(filters["uom"])]
     if filters["gudang"]:
         result = result[result["Letak Gudang"].isin(filters["gudang"])]
     if filters["status"]:
         result = result[result["Status"].isin(filters["status"])]
+    if filters["perlu_blueprint"]:
+        result = result[result["Perlu Blueprint?"].isin(filters["perlu_blueprint"])]
     if filters["kode_search"]:
         result = result[result["Kode Barang"].astype(str).str.contains(filters["kode_search"], case=False, na=False)]
     if filters["desk_search"]:
@@ -179,17 +187,37 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     return result
 
 
-def _non_blank_options(df: pd.DataFrame, col: str) -> list:
-    return sorted(v for v in df[col].dropna().unique() if str(v).strip())
+def _filter_options(df: pd.DataFrame, col: str, extra_options: dict = None) -> list:
+    """Unique non-blank values for a filter, unioned with choices from the
+    workbook's "Dropdown List" sheet (if any) so the filter isn't limited to
+    values that happen to already be present in the uploaded data.
+    """
+    values = set(v for v in df[col].dropna().unique() if str(v).strip()) if col in df.columns else set()
+    if extra_options:
+        values |= {str(v).strip() for v in extra_options.get(col, []) if str(v).strip()}
+    return sorted(values)
 
 
 def render_sidebar(df: pd.DataFrame):
     st.sidebar.header("Filter")
+    dropdown_options = st.session_state.dropdown_options
 
-    kategori_induk = st.sidebar.multiselect("Kategori Induk", _non_blank_options(df, "Kategori Induk"))
-    kategori_anak1 = st.sidebar.multiselect("Kategori Anak 1", _non_blank_options(df, "Kategori Anak 1"))
-    gudang = st.sidebar.multiselect("Letak Gudang", _non_blank_options(df, "Letak Gudang"))
-    status = st.sidebar.multiselect("Status", _non_blank_options(df, "Status"))
+    kategori_induk = st.sidebar.multiselect(
+        "Kategori Induk", _filter_options(df, "Kategori Induk", dropdown_options)
+    )
+    kategori_anak1 = st.sidebar.multiselect(
+        "Kategori Anak 1", _filter_options(df, "Kategori Anak 1", dropdown_options)
+    )
+    kategori_anak2 = st.sidebar.multiselect(
+        "Kategori Anak 2", _filter_options(df, "Kategori Anak 2", dropdown_options)
+    )
+    kategori_anak3 = st.sidebar.multiselect(
+        "Kategori Anak 3", _filter_options(df, "Kategori Anak 3", dropdown_options)
+    )
+    uom = st.sidebar.multiselect("UoM", _filter_options(df, "UoM", dropdown_options))
+    gudang = st.sidebar.multiselect("Letak Gudang", _filter_options(df, "Letak Gudang"))
+    status = st.sidebar.multiselect("Status", _filter_options(df, "Status"))
+    perlu_blueprint = st.sidebar.multiselect("Perlu Blueprint?", _filter_options(df, "Perlu Blueprint?"))
     kode_search = st.sidebar.text_input("Cari Kode Barang")
     desk_search = st.sidebar.text_input("Cari Deskripsi Barang")
 
@@ -208,14 +236,18 @@ def render_sidebar(df: pd.DataFrame):
         min_value=0,
         value=int(st.session_state.lead_time_threshold),
         step=1,
-        help="Barang TIDAK AMAN dengan Lead Time >= nilai ini dianggap PRIORITAS TINGGI.",
+        help="Barang TIDAK AMAN dengan Lead Time >= nilai ini dianggap prioritas tinggi.",
     )
 
     return {
         "kategori_induk": kategori_induk,
         "kategori_anak1": kategori_anak1,
+        "kategori_anak2": kategori_anak2,
+        "kategori_anak3": kategori_anak3,
+        "uom": uom,
         "gudang": gudang,
         "status": status,
+        "perlu_blueprint": perlu_blueprint,
         "kode_search": kode_search,
         "desk_search": desk_search,
         "lead_time_range": lead_time_range,
@@ -283,9 +315,8 @@ def render_welcome():
         """
         <div style="padding: 6px 0 18px 0;">
         <p style="font-size: 1rem; opacity: 0.85; max-width: 720px;">
-        STOCKWISE membantu Anda memantau stok gudang secara real-time: upload Excel inventory,
-        edit datanya langsung di tabel, dan dashboard — KPI, chart, insight, sampai rekomendasi
-        procurement — akan ter-update otomatis tanpa perlu refresh halaman.
+        Upload Excel inventory kamu, edit langsung di tabel, dan sisanya — KPI, chart, insight,
+        rekomendasi pembelian — ikut update sendiri. Gak perlu refresh.
         </p>
         </div>
         """,
@@ -293,10 +324,10 @@ def render_welcome():
     )
 
     features = [
-        ("📤", "Upload & Auto-Detect", "Baca file Excel Anda apa adanya — header boleh tidak di baris pertama."),
-        ("✏️", "Edit Langsung", "Ubah Safety Stock / Sisa Stok di tabel, semua kalkulasi ikut ter-update."),
-        ("📊", "KPI & Chart Otomatis", "Lihat kondisi inventory dari berbagai sudut: gudang, kategori, lead time."),
-        ("🚨", "Insight & Rekomendasi", "Sistem otomatis menandai barang yang perlu diprioritaskan untuk dibeli."),
+        ("📤", "Upload apa adanya", "Header gak harus di baris pertama, file kamu bisa langsung dipakai."),
+        ("✏️", "Edit di tabel", "Ubah Safety Stock atau Sisa Stok, kalkulasi lain ikut nyesuain."),
+        ("📊", "KPI & chart otomatis", "Lihat kondisi stok dari sisi gudang, kategori, sampai lead time."),
+        ("🚨", "Insight & rekomendasi", "Langsung kelihatan barang mana yang paling perlu dibeli duluan."),
     ]
     cols = st.columns(4)
     for col, (icon, title, desc) in zip(cols, features):
@@ -308,9 +339,9 @@ def render_welcome():
             )
 
     st.write("")
-    st.info("👈 **Mulai dengan meng-upload file Excel inventory Anda** di sidebar sebelah kiri.")
+    st.info("👈 Upload file Excel-nya dulu di sidebar sebelah kiri.")
 
-    st.markdown("##### Belum punya file? Unduh template berikut untuk memulai:")
+    st.markdown("##### Belum punya file? Pakai template ini aja:")
     st.download_button(
         "📥 Download Template Excel",
         data=build_template_bytes(),
@@ -319,8 +350,7 @@ def render_welcome():
         key="template_download_welcome",
     )
     st.caption(
-        "Template sudah mengikuti format kolom yang didukung (termasuk contoh format "
-        "`Sisa Stok` seperti \"STOK 15 PCS\"), lengkap dengan 2 baris contoh data."
+        "Formatnya udah sesuai, termasuk contoh Sisa Stok kayak \"STOK 15 PCS\" — tinggal isi datanya."
     )
 
 
@@ -329,8 +359,7 @@ def main():
 
     st.markdown(
         '<div class="sw-hero"><span class="sw-hero-emoji">📦</span><h1>STOCKWISE</h1></div>'
-        '<div class="sw-hero-caption">Dashboard inventory — upload, edit, dan analisis stok secara reaktif, '
-        'tanpa perlu refresh halaman.</div>',
+        '<div class="sw-hero-caption">Upload, edit, pantau stok — semuanya update otomatis, gak perlu refresh.</div>',
         unsafe_allow_html=True,
     )
 
@@ -342,7 +371,7 @@ def main():
         file_name="template_stockwise.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
-        help="Belum punya file? Unduh template kosong dengan format kolom yang sesuai.",
+        help="Belum punya file? Ini template kosong yang formatnya udah sesuai.",
         key="template_download_sidebar",
     )
 
@@ -385,11 +414,11 @@ def main():
     with tab2:
         render_section_header(
             "Data Inventory",
-            "Edit langsung di tabel — Selisih, Status, Defisit, Priority, dan Rekomendasi otomatis dihitung ulang.",
+            "Edit langsung di tabel — Selisih, Status, Defisit, Priority, dan Rekomendasi ikut kehitung ulang.",
         )
         n_tidak_aman = int((filtered_view["Status"] == STATUS_TIDAK_AMAN).sum())
         st.caption(
-            f"Menampilkan **{len(filtered_view):,}** dari **{len(full_df):,}** barang sesuai filter aktif "
+            f"Nampilin **{len(filtered_view):,}** dari **{len(full_df):,}** barang sesuai filter "
             f"— **{n_tidak_aman:,}** di antaranya TIDAK AMAN."
         )
         debug_info = st.session_state.debug_info
@@ -415,7 +444,7 @@ def main():
     filtered_final = apply_filters(full_df, filters)
 
     with tab1:
-        render_section_header("Ringkasan Inventory", "Kondisi stok Anda saat ini, berdasarkan filter yang aktif.")
+        render_section_header("Ringkasan Inventory", "Kondisi stok berdasarkan filter yang aktif.")
         render_kpis(filtered_final)
 
         st.divider()
@@ -461,7 +490,7 @@ def main():
                 st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-        render_section_header("💡 Inventory Insight", "Ringkasan otomatis dari data yang sedang aktif.")
+        render_section_header("💡 Inventory Insight", "Ringkasan singkat dari data yang lagi ditampilkan.")
         insights = generate_insights(filtered_final, st.session_state.lead_time_threshold)
         render_insight_cards(insights)
 

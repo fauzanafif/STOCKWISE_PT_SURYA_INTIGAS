@@ -9,31 +9,31 @@ def generate_insights(df: pd.DataFrame, lead_time_threshold: int) -> list:
     insights = []
 
     if df.empty:
-        insights.append(("info", "ℹ️ Tidak ada data pada filter yang aktif saat ini."))
+        insights.append(("info", "ℹ️ Belum ada data yang cocok dengan filter ini."))
         return insights
 
     unsafe = df[df["Status"] == STATUS_TIDAK_AMAN]
 
     if unsafe.empty:
-        insights.append(("success", "✅ Seluruh inventory berada pada atau di atas safety stock."))
+        insights.append(("success", "✅ Semua stok aman, masih di atas safety stock."))
         return insights
 
-    insights.append(("warning", f"⚠️ Terdapat {len(unsafe)} barang yang berada di bawah safety stock."))
+    insights.append(("warning", f"⚠️ Ada {len(unsafe)} barang yang stoknya di bawah safety stock."))
 
     worst = unsafe.loc[unsafe["Defisit"].idxmax()]
     nama = worst.get("Deskripsi Barang") or worst.get("Kode Barang", "-")
     uom = worst.get("UoM", "") or ""
     insights.append((
         "error",
-        f"🔴 Defisit stok terbesar terdapat pada {nama} dengan kekurangan {int(worst['Defisit'])} {uom}.".strip(),
+        f"🔴 Defisit paling besar ada di {nama}, kurang {int(worst['Defisit'])} {uom}.".strip(),
     ))
 
     high_lead_unsafe = unsafe[unsafe["Lead Time"] >= lead_time_threshold]
     if not high_lead_unsafe.empty:
         insights.append((
             "warning",
-            f"🟠 Terdapat {len(high_lead_unsafe)} barang dengan kondisi stok di bawah safety stock dan "
-            "lead time tinggi. Barang tersebut sebaiknya diprioritaskan untuk procurement.",
+            f"🟠 {len(high_lead_unsafe)} barang stoknya kurang dan lead time-nya lama — ini yang "
+            "paling perlu diprioritaskan buat dibeli.",
         ))
 
     return insights
