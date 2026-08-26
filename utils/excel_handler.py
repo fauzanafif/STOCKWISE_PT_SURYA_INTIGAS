@@ -71,7 +71,6 @@ CANONICAL_KEYWORDS = {
     "Blueprint 3D View": ["BLUEPRINT", "3D"],
 }
 
-HEADER_ANCHOR = "kode barang"
 MAX_HEADER_SCAN_ROWS = 50
 
 _NUMBER_PATTERN = re.compile(r"-?\d+(?:[.,]\d+)?")
@@ -123,14 +122,17 @@ def fuzzy_match_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def detect_header_row(uploaded_file, max_scan_rows: int = MAX_HEADER_SCAN_ROWS):
     """Find the row index (0-based) that holds the real header, by scanning
-    the first few rows for a cell that reads 'Kode Barang'. Returns None if
-    no such row is found within the scan window.
+    the first few rows for a cell containing both "kode" and "barang" (e.g.
+    "Kode Barang", "Kode Barang:", "1. Kode Barang" all match). Substring
+    matching — rather than requiring the cell to equal "kode barang" exactly —
+    tolerates numbering, punctuation, or stray whitespace around the header
+    text. Returns None if no such row is found within the scan window.
     """
     uploaded_file.seek(0)
     preview = pd.read_excel(uploaded_file, header=None, nrows=max_scan_rows, engine="openpyxl")
     for idx in range(len(preview)):
         row_values = [_normalize_header(v) for v in preview.iloc[idx].tolist()]
-        if HEADER_ANCHOR in row_values:
+        if any("kode" in v and "barang" in v for v in row_values):
             return idx
     return None
 
@@ -208,7 +210,12 @@ def load_excel(uploaded_file):
     missing = validate_columns(df)
     if missing:
         cols = ", ".join(f"`{c}`" for c in missing)
-        return None, f"Kolom wajib tidak ditemukan pada file Excel: {cols}."
+        detected = ", ".join(f"`{c}`" for c in df.columns)
+        return None, (
+            f"Kolom wajib tidak ditemukan pada file Excel: {cols}.\n\n"
+            f"Header dibaca dari baris ke-{header_row + 1} pada file, dengan kolom "
+            f"yang terdeteksi: {detected}."
+        )
 
     df = ensure_columns(df)
 
