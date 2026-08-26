@@ -37,14 +37,17 @@ Belum punya file, atau ingin memastikan format Excel Anda sesuai? Klik **📥 Do
 ## Upload Excel
 
 1. Buka sidebar **Data** → **Upload Excel Inventory**.
-2. Pilih file `.xlsx` atau `.xls`. Baris header **tidak harus di baris pertama** — aplikasi otomatis mencari baris yang memuat kolom "Kode Barang" (sampai 50 baris pertama), jadi file dengan judul/baris kosong di atas header (mis. baris 1-4 judul, header di baris 5) tetap terbaca.
-3. Nama kolom tidak harus persis sama — kolom seperti `Safety Stock` atau `SISA STOK (22/08/2026)` dikenali lewat pencocokan kata kunci (`SAFETY`+`STOCK`, `SISA`+`STOK`), jadi tanggal atau variasi penulisan di nama kolom tidak masalah.
-4. Kolom `Sisa Stok` boleh berformat teks seperti `STOK 15 PCS` — nilai numeriknya diekstrak otomatis (`STOK 15 PCS` → `15`).
-5. Jika kolom wajib (`Kode Barang`, `Deskripsi Barang`, `Safety Stock`, `Sisa Stok`) tetap tidak ditemukan setelah pencocokan otomatis, aplikasi menampilkan pesan error yang jelas — termasuk baris header yang terdeteksi dan daftar kolom yang berhasil dibaca — tanpa crash.
+2. Jika workbook Anda punya beberapa sheet (mis. `Data`, `Dropdown List`, `cetak`, `Sheet2`), aplikasi otomatis memakai sheet bernama **"Data"** sebagai dataset utama — sheet `cetak`/`Sheet2`/`Dropdown List` tidak pernah dibaca sebagai data inventory. Jika tidak ada sheet bernama "Data", aplikasi jatuh ke sheet pertama yang bukan salah satu dari ketiganya (tidak pernah asal ambil sheet 1).
+3. Baris header **tidak harus di baris pertama** — aplikasi otomatis mencari baris yang memuat kolom "Kode Barang" (sampai 50 baris pertama sheet tersebut), jadi file dengan judul/baris kosong di atas header (mis. baris 1-4 judul, header di baris 5) tetap terbaca.
+4. Nama kolom tidak harus persis sama — kolom seperti `Safety Stock` atau `SISA STOK (22/08/2026)` dikenali lewat pencocokan kata kunci (`SAFETY`+`STOCK`, `SISA`+`STOK`), begitu juga kolom `√LT` dan `MIN PR`, jadi tanggal atau variasi penulisan di nama kolom tidak masalah.
+5. Kolom `Sisa Stok` boleh berformat teks seperti `STOK 15 PCS` — nilai numeriknya diekstrak otomatis (`STOK 15 PCS` → `15`). `Safety Stock` dan `MIN PR` boleh sepenuhnya kosong — kolom yang ada tapi nilainya kosong tetap dianggap valid (bukan "kolom tidak ditemukan"), dan dinormalisasi jadi 0 untuk kalkulasi.
+6. Jika ada sheet **"Dropdown List"**, pilihannya (Kategori Induk/Anak 1-3, UoM) otomatis ikut mengisi pilihan selectbox di tabel edit, digabung dengan nilai yang sudah ada di data.
+7. Jika kolom wajib (`Kode Barang`, `Deskripsi Barang`, `Safety Stock`, `Sisa Stok`) tetap tidak ditemukan setelah pencocokan otomatis, aplikasi menampilkan pesan error yang jelas — termasuk sheet & baris header yang terdeteksi dan daftar kolom yang berhasil dibaca — tanpa crash.
+8. Buka expander **🐞 Debug Excel** di tab Data Inventory untuk melihat sheet yang dipakai, baris header, kolom yang terdeteksi, dan pilihan dropdown yang terbaca — berguna kalau format Excel berubah lagi di kemudian hari.
 
 ## Edit Data
 
-Buka tab **Data Inventory**. Semua kolom master (Kode Barang, kategori, deskripsi, UoM, lokasi, Safety Stock, Sisa Stok, Lead Time, dst.) bisa diedit langsung di tabel (`st.data_editor`). Kolom hasil kalkulasi (`Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, `Rekomendasi`) bersifat read-only.
+Buka tab **Data Inventory**. Semua kolom master (Kode Barang, kategori, deskripsi, UoM, lokasi, Safety Stock, Sisa Stok, Lead Time, `√LT`, `MIN PR`, dst.) bisa diedit langsung di tabel (`st.data_editor`). Kolom hasil kalkulasi (`Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, `Rekomendasi`) bersifat read-only.
 
 Gunakan sidebar **Filter** (Kategori Induk, Kategori Anak 1, Gudang, Status, pencarian Kode/Deskripsi, range Lead Time) untuk mempersempit data yang ditampilkan — KPI, chart, dan insight otomatis mengikuti data yang sedang difilter.
 

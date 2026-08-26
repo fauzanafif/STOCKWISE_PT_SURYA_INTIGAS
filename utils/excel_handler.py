@@ -20,12 +20,15 @@ CANONICAL_COLUMNS = [
     "Blueprint IMG",
     "Blueprint Detail PDF",
     "Blueprint 3D View",
-    "Safety Stock",
     "Sisa Stok",
     "Lead Time",
+    "√LT",
+    "Safety Stock",
+    "MIN PR",
 ]
 
-# Columns that must exist (or be derivable) for the app to function.
+# Columns that must exist (or be derivable) for the app to function. Their
+# VALUES may be entirely blank — only the column itself has to be present.
 REQUIRED_COLUMNS = [
     "Kode Barang",
     "Deskripsi Barang",
@@ -33,7 +36,8 @@ REQUIRED_COLUMNS = [
     "Sisa Stok",
 ]
 
-NUMERIC_COLUMNS = ["Safety Stock", "Sisa Stok", "Lead Time"]
+# Coerced to numeric (blank/unparseable -> 0) since calculations depend on them.
+NUMERIC_COLUMNS = ["Safety Stock", "Sisa Stok", "Lead Time", "MIN PR"]
 
 CALCULATED_COLUMNS = [
     "Selisih",
@@ -57,6 +61,8 @@ CANONICAL_KEYWORDS = {
     "Safety Stock": ["SAFETY", "STOCK"],
     "Sisa Stok": ["SISA", "STOK"],
     "Lead Time": ["LEAD", "TIME"],
+    "√LT": ["√"],
+    "MIN PR": ["MIN", "PR"],
     "Kategori Induk": ["KATEGORI", "INDUK"],
     "Kategori Anak 1": ["KATEGORI", "ANAK", "1"],
     "Kategori Anak 2": ["KATEGORI", "ANAK", "2"],
@@ -70,6 +76,14 @@ CANONICAL_KEYWORDS = {
     "Blueprint Detail PDF": ["BLUEPRINT", "DETAIL"],
     "Blueprint 3D View": ["BLUEPRINT", "3D"],
 }
+
+# Sheet name selection: prefer a sheet literally named "Data"; these known
+# reference/report sheets are skipped when falling back to "the first sheet
+# that looks like data" so we never blindly grab sheet 1.
+PREFERRED_SHEET_NAME = "data"
+NON_DATA_SHEET_NAMES = {"cetak", "sheet2", "dropdown list"}
+DROPDOWN_SHEET_NAME = "dropdown list"
+DROPDOWN_TARGET_COLUMNS = ["Kategori Induk", "Kategori Anak 1", "Kategori Anak 2", "Kategori Anak 3", "UoM"]
 
 MAX_HEADER_SCAN_ROWS = 50
 
@@ -120,16 +134,42 @@ def fuzzy_match_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df.rename(columns=rename_map)
 
 
-def detect_header_row(uploaded_file, max_scan_rows: int = MAX_HEADER_SCAN_ROWS):
-    """Find the row index (0-based) that holds the real header, by scanning
-    the first few rows for a cell containing both "kode" and "barang" (e.g.
-    "Kode Barang", "Kode Barang:", "1. Kode Barang" all match). Substring
-    matching — rather than requiring the cell to equal "kode barang" exactly —
-    tolerates numbering, punctuation, or stray whitespace around the header
-    text. Returns None if no such row is found within the scan window.
+def select_data_sheet(uploaded_file):
+    """Pick the sheet to read as the inventory dataset.
+
+    Prefers a sheet literally named "Data" (case-insensitive). If none exists,
+    falls back to the first sheet that isn't a known reference/report sheet
+    ("cetak", "Sheet2", "Dropdown List") — never blindly grabs sheet 1.
+
+    Returns (sheet_name, all_sheet_names).
     """
     uploaded_file.seek(0)
-    preview = pd.read_excel(uploaded_file, header=None, nrows=max_scan_rows, engine="openpyxl")
+    xls = pd.ExcelFile(uploaded_file, engine="openpyxl")
+    sheet_names = xls.sheet_names
+
+    for name in sheet_names:
+        if _normalize_header(name) == PREFERRED_SHEET_NAME:
+            return name, sheet_names
+
+    for name in sheet_names:
+        if _normalize_header(name) not in NON_DATA_SHEET_NAMES:
+            return name, sheet_names
+
+    return sheet_names[0], sheet_names
+
+
+def detect_header_row(uploaded_file, sheet_name, max_scan_rows: int = MAX_HEADER_SCAN_ROWS):
+    """Find the row index (0-based) that holds the real header, by scanning
+    the first few rows of `sheet_name` for a cell containing both "kode" and
+    "barang" (e.g. "Kode Barang", "Kode Barang:", "1. Kode Barang" all match).
+    Substring matching — rather than requiring the cell to equal "kode barang"
+    exactly — tolerates numbering, punctuation, or stray whitespace around the
+    header text. Returns None if no such row is found within the scan window.
+    """
+    uploaded_file.seek(0)
+    preview = pd.read_excel(
+        uploaded_file, sheet_name=sheet_name, header=None, nrows=max_scan_rows, engine="openpyxl"
+    )
     for idx in range(len(preview)):
         row_values = [_normalize_header(v) for v in preview.iloc[idx].tolist()]
         if any("kode" in v and "barang" in v for v in row_values):
@@ -180,42 +220,60 @@ def ensure_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_excel(uploaded_file):
-    """Read an uploaded Excel file into a DataFrame.
+    """Read an uploaded Excel workbook into a DataFrame.
 
-    The header row doesn't have to be row 1 — some exports have a title and
-    blank rows above it (e.g. "Database Gudang ..." followed by empty rows),
-    so the real header row is located by scanning for a "Kode Barang" cell.
+    Handles a multi-sheet workbook (picks the "Data" sheet — see
+    `select_data_sheet` — never blindly the first sheet) whose header row
+    doesn't have to be row 1 (some exports have a title and blank rows above
+    it, e.g. "Database Gudang ..." followed by empty rows), so the real
+    header row is located by scanning for a "Kode Barang" cell.
 
-    Returns (df, error_message). df is None if reading failed.
+    Returns (df, error_message, debug_info). df is None if reading failed;
+    debug_info is always a dict (sheet/header/columns info once known, or
+    partial info if it failed partway through) so the caller can show it in
+    a debug panel regardless of success.
     """
+    debug_info = {"all_sheets": None, "sheet": None, "header_row": None, "columns": None}
+
     try:
-        header_row = detect_header_row(uploaded_file)
+        sheet_name, all_sheets = select_data_sheet(uploaded_file)
+        debug_info["all_sheets"] = all_sheets
+        debug_info["sheet"] = sheet_name
     except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
-        return None, f"Gagal membaca file Excel: {exc}"
+        return None, f"Gagal membaca file Excel: {exc}", debug_info
+
+    try:
+        header_row = detect_header_row(uploaded_file, sheet_name)
+    except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
+        return None, f"Gagal membaca file Excel: {exc}", debug_info
 
     if header_row is None:
         return None, (
-            f"Baris header tidak ditemukan (mencari kolom 'Kode Barang' pada "
-            f"{MAX_HEADER_SCAN_ROWS} baris pertama file Excel)."
-        )
+            f"Baris header tidak ditemukan pada sheet '{sheet_name}' (mencari kolom "
+            f"'Kode Barang' pada {MAX_HEADER_SCAN_ROWS} baris pertama)."
+        ), debug_info
+
+    debug_info["header_row"] = header_row + 1  # 1-indexed, matches how Excel shows row numbers
 
     try:
         uploaded_file.seek(0)
-        raw = pd.read_excel(uploaded_file, header=header_row, engine="openpyxl")
+        raw = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=header_row, engine="openpyxl")
     except Exception as exc:  # noqa: BLE001 - surfaced to the user, not swallowed
-        return None, f"Gagal membaca file Excel: {exc}"
+        return None, f"Gagal membaca file Excel: {exc}", debug_info
 
     df = normalize_columns(raw)
     df = fuzzy_match_columns(df)
+    debug_info["columns"] = df.columns.tolist()
+
     missing = validate_columns(df)
     if missing:
         cols = ", ".join(f"`{c}`" for c in missing)
         detected = ", ".join(f"`{c}`" for c in df.columns)
         return None, (
             f"Kolom wajib tidak ditemukan pada file Excel: {cols}.\n\n"
-            f"Header dibaca dari baris ke-{header_row + 1} pada file, dengan kolom "
-            f"yang terdeteksi: {detected}."
-        )
+            f"Sheet yang dibaca: '{sheet_name}', header pada baris ke-{header_row + 1}, "
+            f"dengan kolom yang terdeteksi: {detected}."
+        ), debug_info
 
     df = ensure_columns(df)
 
@@ -223,7 +281,43 @@ def load_excel(uploaded_file):
         df[col] = df[col].apply(extract_number)
 
     df = df.reset_index(drop=True)
-    return df, None
+    return df, None, debug_info
+
+
+def load_dropdown_options(uploaded_file) -> dict:
+    """Best-effort read of the "Dropdown List" sheet for select-box choices
+    (Kategori Induk/Anak 1-3, UoM). Purely additive — never raises, and
+    returns {} on any problem (sheet missing, unexpected layout) so the app
+    just falls back to deriving options from the active dataset.
+    """
+    try:
+        uploaded_file.seek(0)
+        xls = pd.ExcelFile(uploaded_file, engine="openpyxl")
+        sheet_name = next(
+            (name for name in xls.sheet_names if _normalize_header(name) == DROPDOWN_SHEET_NAME), None
+        )
+        if sheet_name is None:
+            return {}
+        uploaded_file.seek(0)
+        raw = pd.read_excel(uploaded_file, sheet_name=sheet_name, engine="openpyxl")
+    except Exception:  # noqa: BLE001 - best-effort only, never breaks the upload
+        return {}
+
+    options = {}
+    for target in DROPDOWN_TARGET_COLUMNS:
+        col = None
+        for c in raw.columns:
+            if _normalize_header(c) == _normalize_header(target):
+                col = c
+                break
+        if col is None:
+            col = find_column(raw, CANONICAL_KEYWORDS.get(target, [target.upper()]))
+        if col is None:
+            continue
+        values = sorted({str(v).strip() for v in raw[col].dropna() if str(v).strip()})
+        if values:
+            options[target] = values
+    return options
 
 
 TEMPLATE_TITLE = "Database Gudang STOCKWISE"
@@ -253,6 +347,8 @@ TEMPLATE_EXAMPLE_ROWS = [
         "Safety Stock": 10,
         "Sisa Stok": "STOK 15 PCS",
         "Lead Time": 5,
+        "√LT": "OK",
+        "MIN PR": 5,
     },
     {
         "Kode Barang": "PUI.0020",
@@ -272,22 +368,33 @@ TEMPLATE_EXAMPLE_ROWS = [
         "Safety Stock": 10,
         "Sisa Stok": "STOK 0 PCS",
         "Lead Time": 21,
+        "√LT": "",
+        "MIN PR": 10,
     },
 ]
 
+TEMPLATE_DROPDOWN_OPTIONS = {
+    "Kategori Induk": ["Post-Use Items", "Office Needs", "Small Spare Parts", "Big Spare Parts", "Automotive"],
+    "Kategori Anak 1": ["NEED ASSESSMENT (BEKAS)", "ATK", "Consumables"],
+    "Kategori Anak 2": [],
+    "Kategori Anak 3": [],
+    "UoM": ["PCS", "UNIT", "SET", "BOX", "ROLL"],
+}
+
 
 def build_template_bytes() -> bytes:
-    """Build a downloadable blank Excel template with the expected columns,
-    the same title-rows-then-header layout as a real STOCKWISE export, and a
-    couple of example rows (one AMAN, one TIDAK AMAN) to illustrate the
-    expected format — especially that 'Sisa Stok' accepts text like
-    'STOK 15 PCS'.
+    """Build a downloadable blank Excel template that mirrors a real STOCKWISE
+    workbook: a "Data" sheet (title rows, then header, then a couple of
+    example rows — one AMAN, one TIDAK AMAN, illustrating that 'Sisa Stok'
+    accepts text like 'STOK 15 PCS') plus a "Dropdown List" sheet for the
+    category/UoM choices used to seed the data editor's selectboxes.
     """
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         workbook = writer.book
-        worksheet = workbook.add_worksheet("Inventory")
-        writer.sheets["Inventory"] = worksheet
+
+        data_sheet = workbook.add_worksheet("Data")
+        writer.sheets["Data"] = data_sheet
 
         title_fmt = workbook.add_format({"bold": True, "font_size": 14})
         note_fmt = workbook.add_format({"italic": True, "font_color": "#898781", "text_wrap": True})
@@ -296,19 +403,28 @@ def build_template_bytes() -> bytes:
         )
         example_fmt = workbook.add_format({"font_color": "#52514e", "italic": True})
 
-        worksheet.write(0, 0, TEMPLATE_TITLE, title_fmt)
-        worksheet.merge_range(1, 0, 2, len(CANONICAL_COLUMNS) - 1, TEMPLATE_NOTE, note_fmt)
+        data_sheet.write(0, 0, TEMPLATE_TITLE, title_fmt)
+        data_sheet.merge_range(1, 0, 2, len(CANONICAL_COLUMNS) - 1, TEMPLATE_NOTE, note_fmt)
 
         for col_idx, col_name in enumerate(CANONICAL_COLUMNS):
-            worksheet.write(TEMPLATE_HEADER_ROW, col_idx, col_name, header_fmt)
+            data_sheet.write(TEMPLATE_HEADER_ROW, col_idx, col_name, header_fmt)
             width = max(14, min(42, len(col_name) + 6))
-            worksheet.set_column(col_idx, col_idx, width)
+            data_sheet.set_column(col_idx, col_idx, width)
 
         for r, example in enumerate(TEMPLATE_EXAMPLE_ROWS, start=TEMPLATE_HEADER_ROW + 1):
             for col_idx, col_name in enumerate(CANONICAL_COLUMNS):
-                worksheet.write(r, col_idx, example.get(col_name, ""), example_fmt)
+                data_sheet.write(r, col_idx, example.get(col_name, ""), example_fmt)
 
-        worksheet.freeze_panes(TEMPLATE_HEADER_ROW + 1, 0)
+        data_sheet.freeze_panes(TEMPLATE_HEADER_ROW + 1, 0)
+
+        dropdown_sheet = workbook.add_worksheet("Dropdown List")
+        writer.sheets["Dropdown List"] = dropdown_sheet
+        for col_idx, target in enumerate(DROPDOWN_TARGET_COLUMNS):
+            dropdown_sheet.write(0, col_idx, target, header_fmt)
+            values = TEMPLATE_DROPDOWN_OPTIONS.get(target, [])
+            for row_idx, value in enumerate(values, start=1):
+                dropdown_sheet.write(row_idx, col_idx, value)
+            dropdown_sheet.set_column(col_idx, col_idx, max(16, len(target) + 4))
 
     return buffer.getvalue()
 
@@ -319,9 +435,9 @@ def to_export_bytes(df: pd.DataFrame) -> bytes:
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        export_df.to_excel(writer, index=False, sheet_name="Inventory")
+        export_df.to_excel(writer, index=False, sheet_name="Data")
         workbook = writer.book
-        worksheet = writer.sheets["Inventory"]
+        worksheet = writer.sheets["Data"]
 
         header_fmt = workbook.add_format(
             {"bold": True, "bg_color": "#1F2937", "font_color": "#FFFFFF", "border": 1}

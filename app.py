@@ -14,7 +14,7 @@ from components.charts import (
 from components.data_editor import render_data_editor
 from components.kpi import render_kpis
 from utils.calculations import STATUS_TIDAK_AMAN, recalculate, suggest_lead_time_threshold
-from utils.excel_handler import build_template_bytes, load_excel, to_export_bytes
+from utils.excel_handler import build_template_bytes, load_dropdown_options, load_excel, to_export_bytes
 from utils.insights import generate_insights
 from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING
 
@@ -132,6 +132,8 @@ def init_state():
         ("file_signature", None),
         ("file_name", None),
         ("lead_time_threshold", None),
+        ("debug_info", None),
+        ("dropdown_options", {}),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -348,15 +350,23 @@ def main():
         signature = f"{uploaded.name}-{uploaded.size}"
         if signature != st.session_state.file_signature:
             with st.spinner("Membaca dan memproses file Excel..."):
-                df, error = load_excel(uploaded)
+                df, error, debug_info = load_excel(uploaded)
+            st.session_state.debug_info = debug_info
             if error:
                 st.error(error)
+                if debug_info.get("all_sheets"):
+                    with st.expander("🐞 Debug Excel"):
+                        st.write("Sheet terdeteksi:", debug_info.get("all_sheets"))
+                        st.write("Sheet yang dipilih:", debug_info.get("sheet"))
+                        st.write("Baris header:", debug_info.get("header_row"))
+                        st.write("Kolom terbaca:", debug_info.get("columns"))
                 st.stop()
             st.session_state.lead_time_threshold = suggest_lead_time_threshold(df)
             df = recalculate(df, st.session_state.lead_time_threshold)
             st.session_state.df = df
             st.session_state.file_signature = signature
             st.session_state.file_name = uploaded.name
+            st.session_state.dropdown_options = load_dropdown_options(uploaded)
             st.toast(f"Berhasil memuat {len(df):,} barang dari '{uploaded.name}'.", icon="✅")
 
     if st.session_state.df is None:
@@ -382,8 +392,22 @@ def main():
             f"Menampilkan **{len(filtered_view):,}** dari **{len(full_df):,}** barang sesuai filter aktif "
             f"— **{n_tidak_aman:,}** di antaranya TIDAK AMAN."
         )
+        debug_info = st.session_state.debug_info
+        if debug_info:
+            with st.expander("🐞 Debug Excel"):
+                st.write("Sheet terdeteksi pada workbook:", debug_info.get("all_sheets"))
+                st.write("Sheet yang digunakan:", debug_info.get("sheet"))
+                st.write("Baris header:", debug_info.get("header_row"))
+                st.write("Kolom terdeteksi:", debug_info.get("columns"))
+                st.write("Pilihan dropdown dari sheet 'Dropdown List':", st.session_state.dropdown_options or "(tidak ditemukan)")
+
         editor_key = f"inventory_editor::{filter_signature(filters)}"
-        edited_view = render_data_editor(filtered_view, options_df=full_df, key=editor_key)
+        edited_view = render_data_editor(
+            filtered_view,
+            options_df=full_df,
+            extra_options=st.session_state.dropdown_options,
+            key=editor_key,
+        )
         full_df = merge_edits(full_df, filtered_view, edited_view)
         full_df = recalculate(full_df, st.session_state.lead_time_threshold)
         st.session_state.df = full_df

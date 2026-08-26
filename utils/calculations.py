@@ -62,9 +62,8 @@ def compute_priority_level(df: pd.DataFrame) -> pd.Series:
 def recalculate(df: pd.DataFrame, lead_time_threshold: int = DEFAULT_LEAD_TIME_THRESHOLD) -> pd.DataFrame:
     """Run the full reactive pipeline and return a df with all calculated columns refreshed."""
     df = df.copy()
-    df["Safety Stock"] = pd.to_numeric(df["Safety Stock"], errors="coerce").fillna(0)
-    df["Sisa Stok"] = pd.to_numeric(df["Sisa Stok"], errors="coerce").fillna(0)
-    df["Lead Time"] = pd.to_numeric(df["Lead Time"], errors="coerce").fillna(0)
+    for col in NUMERIC_COLUMNS:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     text_cols = [c for c in df.columns if c not in NUMERIC_COLUMNS and c not in CALCULATED_COLUMNS]
     df[text_cols] = df[text_cols].fillna("").astype(str).replace("nan", "")
