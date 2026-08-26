@@ -10,17 +10,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from utils.calculations import STATUS_AMAN, STATUS_TIDAK_AMAN
+from utils.theme import (
+    COLOR_AMAN,
+    COLOR_TIDAK_AMAN,
+    SEQUENTIAL_BLUE,
+    SERIES_BLUE,
+    SERIES_ORANGE,
+    STATUS_COLOR_MAP,
+)
 
-COLOR_AMAN = "#0ca30c"
-COLOR_TIDAK_AMAN = "#d03b3b"
-STATUS_COLOR_MAP = {STATUS_AMAN: COLOR_AMAN, STATUS_TIDAK_AMAN: COLOR_TIDAK_AMAN}
-
-SERIES_BLUE = "#2a78d6"
-SERIES_ORANGE = "#eb6834"
-
-SEQUENTIAL_BLUE = ["#cde2fb", "#86b6ef", "#3987e5", "#184f95"]
-
-CHART_FONT = dict(family="system-ui, -apple-system, 'Segoe UI', sans-serif")
+CHART_FONT = dict(family="'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif")
 
 
 def _style(fig, height=380):

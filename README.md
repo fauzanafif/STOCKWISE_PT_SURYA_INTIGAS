@@ -10,10 +10,11 @@ STOCKWISE/
 ├── requirements.txt
 ├── data/                      # (opsional) tempat menaruh file Excel contoh
 ├── utils/
-│   ├── excel_handler.py       # baca/validasi/normalisasi Excel, parsing "STOK 15 PCS", export
+│   ├── excel_handler.py       # deteksi baris header, normalisasi/fuzzy-match kolom, parsing "STOK 15 PCS", export & template
 │   ├── calculations.py        # Selisih, Status, Defisit, Priority Score/Level (pipeline reaktif)
 │   ├── insights.py            # teks insight otomatis
-│   └── recommendations.py     # rule-based recommendation engine
+│   ├── recommendations.py     # rule-based recommendation engine
+│   └── theme.py                # palet warna bersama (KPI, chart, badge status)
 └── components/
     ├── kpi.py                 # KPI cards
     ├── charts.py              # semua visualisasi Plotly
@@ -29,12 +30,17 @@ streamlit run app.py
 
 Aplikasi akan terbuka di `http://localhost:8501`.
 
+## Download Template
+
+Belum punya file, atau ingin memastikan format Excel Anda sesuai? Klik **📥 Download Template Excel** di sidebar (atau di layar awal sebelum upload). Template ini sudah memakai layout yang sama seperti export STOCKWISE asli (judul di baris 1-4, header di baris 5) lengkap dengan 2 baris contoh data — satu AMAN, satu TIDAK AMAN — supaya format `Sisa Stok` seperti `STOK 15 PCS` langsung terlihat jelas.
+
 ## Upload Excel
 
 1. Buka sidebar **Data** → **Upload Excel Inventory**.
-2. Pilih file `.xlsx` atau `.xls` dengan struktur kolom seperti `STOCKWISE.xlsx` (Kode Barang, Kategori Induk, Kategori Anak 1-3, Deskripsi Barang, UoM, Letak Gudang, Letak Rak, Safety Stock, Sisa Stok, Lead Time, dll).
-3. Kolom `Sisa Stok` boleh berformat teks seperti `STOK 15 PCS` — nilai numeriknya diekstrak otomatis (`STOK 15 PCS` → `15`).
-4. Jika ada kolom wajib yang hilang (`Kode Barang`, `Deskripsi Barang`, `Safety Stock`, `Sisa Stok`), aplikasi menampilkan pesan error yang jelas tanpa crash.
+2. Pilih file `.xlsx` atau `.xls`. Baris header **tidak harus di baris pertama** — aplikasi otomatis mencari baris yang memuat kolom "Kode Barang" (sampai 50 baris pertama), jadi file dengan judul/baris kosong di atas header (mis. baris 1-4 judul, header di baris 5) tetap terbaca.
+3. Nama kolom tidak harus persis sama — kolom seperti `Safety Stock` atau `SISA STOK (22/08/2026)` dikenali lewat pencocokan kata kunci (`SAFETY`+`STOCK`, `SISA`+`STOK`), jadi tanggal atau variasi penulisan di nama kolom tidak masalah.
+4. Kolom `Sisa Stok` boleh berformat teks seperti `STOK 15 PCS` — nilai numeriknya diekstrak otomatis (`STOK 15 PCS` → `15`).
+5. Jika kolom wajib (`Kode Barang`, `Deskripsi Barang`, `Safety Stock`, `Sisa Stok`) tetap tidak ditemukan setelah pencocokan otomatis, aplikasi menampilkan pesan error yang jelas — termasuk baris header yang terdeteksi dan daftar kolom yang berhasil dibaca — tanpa crash.
 
 ## Edit Data
 

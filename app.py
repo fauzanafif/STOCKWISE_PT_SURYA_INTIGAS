@@ -14,27 +14,112 @@ from components.charts import (
 from components.data_editor import render_data_editor
 from components.kpi import render_kpis
 from utils.calculations import STATUS_TIDAK_AMAN, recalculate, suggest_lead_time_threshold
-from utils.excel_handler import load_excel, to_export_bytes
+from utils.excel_handler import build_template_bytes, load_excel, to_export_bytes
 from utils.insights import generate_insights
+from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING
 
 st.set_page_config(page_title="STOCKWISE", page_icon="📦", layout="wide")
 
 st.markdown(
     """
     <style>
-    .block-container {padding-top: 2rem; padding-bottom: 2rem;}
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+
+    .block-container {padding-top: 1.6rem; padding-bottom: 2.5rem; max-width: 1300px;}
+
+    /* ---- App header ---- */
+    .sw-hero {
+        display: flex; align-items: center; gap: 14px;
+        margin-bottom: 0.25rem;
+    }
+    .sw-hero .sw-hero-emoji {
+        font-size: 2.1rem; line-height: 1;
+    }
+    .sw-hero h1 { margin: 0; font-size: 1.85rem; font-weight: 800; letter-spacing: -0.02em; }
+    .sw-hero-caption { color: #898781; font-size: 0.95rem; margin: 2px 0 1.2rem 0; }
+
+    /* ---- Section headers ---- */
+    .sw-section-title {
+        font-size: 1.15rem; font-weight: 700; margin: 0 0 2px 0; letter-spacing: -0.01em;
+    }
+    .sw-section-caption { color: #898781; font-size: 0.85rem; margin-bottom: 0.6rem; }
+    .sw-chart-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0px; }
+    .sw-chart-caption { color: #898781; font-size: 0.78rem; margin-bottom: 6px; }
+
+    /* ---- KPI cards ---- */
+    .sw-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+    .sw-kpi-card {
+        display: flex; align-items: center; gap: 12px;
+        background: rgba(127, 127, 127, 0.06);
+        border: 1px solid rgba(127, 127, 127, 0.14);
+        border-radius: 14px;
+        padding: 14px 16px;
+        transition: border-color 0.15s ease;
+    }
+    .sw-kpi-card:hover { border-color: rgba(127, 127, 127, 0.3); }
+    .sw-kpi-icon {
+        flex-shrink: 0;
+        width: 42px; height: 42px;
+        border-radius: 11px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.25rem;
+    }
+    .sw-kpi-label { font-size: 0.78rem; font-weight: 600; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.03em; }
+    .sw-kpi-value { font-size: 1.55rem; font-weight: 800; line-height: 1.25; }
+    .sw-kpi-sub { font-size: 0.72rem; opacity: 0.6; }
+
+    /* ---- Health bar ---- */
+    .sw-health { margin: 4px 0 22px 0; }
+    .sw-health-label {
+        display: flex; justify-content: space-between; align-items: baseline;
+        font-size: 0.85rem; font-weight: 600; margin-bottom: 6px;
+    }
+    .sw-health-pct { font-weight: 800; }
+    .sw-health-track {
+        width: 100%; height: 10px; border-radius: 999px;
+        background: rgba(127, 127, 127, 0.15);
+        overflow: hidden;
+    }
+    .sw-health-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+
+    /* ---- Insight cards ---- */
+    .sw-insight {
+        display: flex; gap: 10px; align-items: flex-start;
+        padding: 12px 14px;
+        border-radius: 10px;
+        margin-bottom: 8px;
+        border: 1px solid rgba(127, 127, 127, 0.14);
+        font-size: 0.92rem;
+        line-height: 1.4;
+    }
+
+    /* ---- Tabs ---- */
+    button[data-baseweb="tab"] { font-size: 0.98rem; font-weight: 600; padding: 8px 4px; }
     div[data-testid="stMetric"] {
         background: rgba(127, 127, 127, 0.06);
         border: 1px solid rgba(127, 127, 127, 0.15);
         border-radius: 10px;
         padding: 12px 16px;
     }
-    .stockwise-insight {
-        padding: 10px 14px;
-        border-radius: 8px;
-        margin-bottom: 8px;
-        border: 1px solid rgba(127, 127, 127, 0.15);
+
+    /* ---- Welcome / empty state ---- */
+    .sw-welcome-feature {
+        background: rgba(127, 127, 127, 0.05);
+        border: 1px solid rgba(127, 127, 127, 0.12);
+        border-radius: 12px;
+        padding: 14px 16px;
+        height: 100%;
     }
+    .sw-welcome-feature .emoji { font-size: 1.4rem; }
+    .sw-welcome-feature b { display: block; margin: 6px 0 2px 0; font-size: 0.95rem; }
+    .sw-welcome-feature p { margin: 0; font-size: 0.82rem; color: #898781; line-height: 1.4; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -45,6 +130,7 @@ def init_state():
     for key, default in [
         ("df", None),
         ("file_signature", None),
+        ("file_name", None),
         ("lead_time_threshold", None),
     ]:
         if key not in st.session_state:
@@ -164,32 +250,105 @@ def merge_edits(full_df: pd.DataFrame, filtered_view: pd.DataFrame, edited_view:
 
 def render_insight_cards(insights):
     palette = {
-        "success": ("#0ca30c", "rgba(12,163,12,0.08)"),
-        "warning": ("#c98500", "rgba(201,133,0,0.10)"),
-        "error": ("#d03b3b", "rgba(208,59,59,0.08)"),
-        "info": ("#52514e", "rgba(127,127,127,0.08)"),
+        "success": (COLOR_AMAN, "rgba(12,163,12,0.08)"),
+        "warning": (COLOR_WARNING, "rgba(201,133,0,0.10)"),
+        "error": (COLOR_TIDAK_AMAN, "rgba(208,59,59,0.08)"),
+        "info": (COLOR_NEUTRAL, "rgba(127,127,127,0.08)"),
     }
     for severity, message in insights:
         color, bg = palette.get(severity, palette["info"])
         st.markdown(
-            f'<div class="stockwise-insight" style="border-left: 4px solid {color}; background: {bg};">{message}</div>',
+            f'<div class="sw-insight" style="border-left: 4px solid {color}; background: {bg};">'
+            f'<span>{message}</span></div>',
             unsafe_allow_html=True,
         )
+
+
+def render_section_header(title: str, caption: str = ""):
+    st.markdown(f'<div class="sw-section-title">{title}</div>', unsafe_allow_html=True)
+    if caption:
+        st.markdown(f'<div class="sw-section-caption">{caption}</div>', unsafe_allow_html=True)
+
+
+def render_chart_header(title: str, caption: str = ""):
+    st.markdown(f'<div class="sw-chart-title">{title}</div>', unsafe_allow_html=True)
+    if caption:
+        st.markdown(f'<div class="sw-chart-caption">{caption}</div>', unsafe_allow_html=True)
+
+
+def render_welcome():
+    st.markdown(
+        """
+        <div style="padding: 6px 0 18px 0;">
+        <p style="font-size: 1rem; opacity: 0.85; max-width: 720px;">
+        STOCKWISE membantu Anda memantau stok gudang secara real-time: upload Excel inventory,
+        edit datanya langsung di tabel, dan dashboard — KPI, chart, insight, sampai rekomendasi
+        procurement — akan ter-update otomatis tanpa perlu refresh halaman.
+        </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    features = [
+        ("📤", "Upload & Auto-Detect", "Baca file Excel Anda apa adanya — header boleh tidak di baris pertama."),
+        ("✏️", "Edit Langsung", "Ubah Safety Stock / Sisa Stok di tabel, semua kalkulasi ikut ter-update."),
+        ("📊", "KPI & Chart Otomatis", "Lihat kondisi inventory dari berbagai sudut: gudang, kategori, lead time."),
+        ("🚨", "Insight & Rekomendasi", "Sistem otomatis menandai barang yang perlu diprioritaskan untuk dibeli."),
+    ]
+    cols = st.columns(4)
+    for col, (icon, title, desc) in zip(cols, features):
+        with col:
+            st.markdown(
+                f'<div class="sw-welcome-feature"><span class="emoji">{icon}</span>'
+                f'<b>{title}</b><p>{desc}</p></div>',
+                unsafe_allow_html=True,
+            )
+
+    st.write("")
+    st.info("👈 **Mulai dengan meng-upload file Excel inventory Anda** di sidebar sebelah kiri.")
+
+    st.markdown("##### Belum punya file? Unduh template berikut untuk memulai:")
+    st.download_button(
+        "📥 Download Template Excel",
+        data=build_template_bytes(),
+        file_name="template_stockwise.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="template_download_welcome",
+    )
+    st.caption(
+        "Template sudah mengikuti format kolom yang didukung (termasuk contoh format "
+        "`Sisa Stok` seperti \"STOK 15 PCS\"), lengkap dengan 2 baris contoh data."
+    )
 
 
 def main():
     init_state()
 
-    st.title("📦 STOCKWISE")
-    st.caption("Dashboard inventory — upload, edit, dan analisis stok secara reaktif.")
+    st.markdown(
+        '<div class="sw-hero"><span class="sw-hero-emoji">📦</span><h1>STOCKWISE</h1></div>'
+        '<div class="sw-hero-caption">Dashboard inventory — upload, edit, dan analisis stok secara reaktif, '
+        'tanpa perlu refresh halaman.</div>',
+        unsafe_allow_html=True,
+    )
 
-    st.sidebar.header("Data")
+    st.sidebar.markdown("### 📁 Data")
     uploaded = st.sidebar.file_uploader("Upload Excel Inventory", type=["xlsx", "xls"])
+    st.sidebar.download_button(
+        "📥 Download Template Excel",
+        data=build_template_bytes(),
+        file_name="template_stockwise.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+        help="Belum punya file? Unduh template kosong dengan format kolom yang sesuai.",
+        key="template_download_sidebar",
+    )
 
     if uploaded is not None:
         signature = f"{uploaded.name}-{uploaded.size}"
         if signature != st.session_state.file_signature:
-            df, error = load_excel(uploaded)
+            with st.spinner("Membaca dan memproses file Excel..."):
+                df, error = load_excel(uploaded)
             if error:
                 st.error(error)
                 st.stop()
@@ -197,20 +356,32 @@ def main():
             df = recalculate(df, st.session_state.lead_time_threshold)
             st.session_state.df = df
             st.session_state.file_signature = signature
+            st.session_state.file_name = uploaded.name
+            st.toast(f"Berhasil memuat {len(df):,} barang dari '{uploaded.name}'.", icon="✅")
 
     if st.session_state.df is None:
-        st.info("👈 Silakan upload file Excel inventory (.xlsx / .xls) melalui sidebar untuk memulai.")
+        render_welcome()
         st.stop()
 
     full_df = st.session_state.df
+    st.sidebar.caption(f"📄 **{st.session_state.file_name}** — {len(full_df):,} barang")
+    st.sidebar.divider()
+
     filters = render_sidebar(full_df)
     filtered_view = apply_filters(full_df, filters)
 
     tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🗂️ Data Inventory", "🚚 Procurement", "⬇️ Export"])
 
     with tab2:
-        st.subheader("Data Inventory")
-        st.caption("Edit langsung di tabel. Selisih, Status, dan kolom analisis lain dihitung ulang otomatis.")
+        render_section_header(
+            "Data Inventory",
+            "Edit langsung di tabel — Selisih, Status, Defisit, Priority, dan Rekomendasi otomatis dihitung ulang.",
+        )
+        n_tidak_aman = int((filtered_view["Status"] == STATUS_TIDAK_AMAN).sum())
+        st.caption(
+            f"Menampilkan **{len(filtered_view):,}** dari **{len(full_df):,}** barang sesuai filter aktif "
+            f"— **{n_tidak_aman:,}** di antaranya TIDAK AMAN."
+        )
         editor_key = f"inventory_editor::{filter_signature(filters)}"
         edited_view = render_data_editor(filtered_view, options_df=full_df, key=editor_key)
         full_df = merge_edits(full_df, filtered_view, edited_view)
@@ -220,62 +391,73 @@ def main():
     filtered_final = apply_filters(full_df, filters)
 
     with tab1:
-        st.subheader("Ringkasan Inventory")
+        render_section_header("Ringkasan Inventory", "Kondisi stok Anda saat ini, berdasarkan filter yang aktif.")
         render_kpis(filtered_final)
 
         st.divider()
+        render_section_header("🔎 Kondisi Inventory Saat Ini", "Apa yang aman, apa yang tidak, dan seberapa parah.")
         c1, c2 = st.columns([1, 2])
         with c1:
-            st.markdown("**Status Inventory**")
+            render_chart_header("Status Inventory", "Proporsi barang AMAN vs TIDAK AMAN.")
             fig = status_donut(filtered_final)
             st.plotly_chart(fig, use_container_width=True)
         with c2:
-            st.markdown("**Top Barang dengan Defisit Terbesar**")
+            render_chart_header("Top Barang dengan Defisit Terbesar", "Barang paling kurang dari safety stock-nya.")
             fig = top_deficit_bar(filtered_final)
             if fig is not None:
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.success("Tidak ada barang dengan defisit stok.")
+                st.success("✅ Tidak ada barang dengan defisit stok.")
 
-        st.markdown("**Stok vs Safety Stock (Top Defisit)**")
+        render_chart_header("Stok vs Safety Stock", "Perbandingan langsung: stok saat ini vs batas amannya.")
         fig = stock_vs_safety_bar(filtered_final)
         if fig is not None:
             st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
+        render_section_header("📍 Analisis per Lokasi & Kategori", "Di gudang atau kategori mana masalah paling banyak.")
         c3, c4 = st.columns(2)
         with c3:
-            st.markdown("**Inventory per Gudang — Status**")
+            render_chart_header("Inventory per Gudang — Status", "Jumlah barang aman/tidak aman di tiap gudang.")
             fig = warehouse_status_bar(filtered_final)
             if fig is not None:
                 st.plotly_chart(fig, use_container_width=True)
-            st.markdown("**Inventory per Gudang — Stok vs Safety Stock**")
+            render_chart_header("Inventory per Gudang — Stok vs Safety Stock", "Total stok vs total safety stock per gudang.")
             fig = warehouse_stock_bar(filtered_final)
             if fig is not None:
                 st.plotly_chart(fig, use_container_width=True)
         with c4:
-            st.markdown("**Inventory per Kategori Induk**")
+            render_chart_header("Inventory per Kategori Induk", "Jumlah barang aman/tidak aman per kategori.")
             fig = category_status_bar(filtered_final)
             if fig is not None:
                 st.plotly_chart(fig, use_container_width=True)
-            st.markdown("**Lead Time vs Defisit**")
+            render_chart_header("Lead Time vs Defisit", "Barang lead time tinggi + defisit besar = prioritas procurement.")
             fig = lead_time_scatter(filtered_final)
             if fig is not None:
                 st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-        st.subheader("Inventory Insight")
+        render_section_header("💡 Inventory Insight", "Ringkasan otomatis dari data yang sedang aktif.")
         insights = generate_insights(filtered_final, st.session_state.lead_time_threshold)
         render_insight_cards(insights)
 
     with tab3:
-        st.subheader("Procurement Priority")
+        render_section_header(
+            "Procurement Priority",
+            "Barang TIDAK AMAN, diurutkan dari yang paling mendesak untuk dibeli.",
+        )
         unsafe = filtered_final[filtered_final["Status"] == STATUS_TIDAK_AMAN].sort_values(
             "Priority Score", ascending=False
         )
         if unsafe.empty:
             st.success("✅ Tidak ada barang yang memerlukan procurement segera.")
         else:
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Barang Perlu Aksi", f"{len(unsafe):,}")
+            m2.metric("Total Defisit", f"{unsafe['Defisit'].sum():,.0f}")
+            m3.metric("Prioritas Tinggi", f"{(unsafe['Priority Level'] == 'HIGH').sum():,}")
+            st.write("")
+
             cols = [
                 "Kode Barang",
                 "Deskripsi Barang",
@@ -289,14 +471,25 @@ def main():
                 "Rekomendasi",
             ]
             cols = [c for c in cols if c in unsafe.columns]
-            st.dataframe(unsafe[cols], use_container_width=True, hide_index=True)
+
+            priority_colors = {"HIGH": COLOR_TIDAK_AMAN, "MEDIUM": COLOR_WARNING, "LOW": COLOR_AMAN}
+
+            def _style_priority(val):
+                color = priority_colors.get(val)
+                return f"background-color:{color}26; color:{color}; font-weight:700;" if color else ""
+
+            styled = unsafe[cols].style.applymap(_style_priority, subset=["Priority Level"])
+            st.dataframe(styled, use_container_width=True, hide_index=True)
 
     with tab4:
-        st.subheader("Export Data")
-        st.caption("Hasil export sudah mencakup Selisih, Status, Defisit, Priority Score/Level, dan Rekomendasi.")
+        render_section_header(
+            "Export Data",
+            "Hasil export sudah mencakup Selisih, Status, Defisit, Priority Score/Level, dan Rekomendasi.",
+        )
 
         export_scope = st.radio("Data yang diexport", ["Seluruh Data", "Data Terfilter"], horizontal=True)
         export_df = full_df if export_scope == "Seluruh Data" else filtered_final
+        st.caption(f"Akan mengekspor **{len(export_df):,}** baris.")
 
         col1, col2 = st.columns(2)
         with col1:

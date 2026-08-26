@@ -226,6 +226,93 @@ def load_excel(uploaded_file):
     return df, None
 
 
+TEMPLATE_TITLE = "Database Gudang STOCKWISE"
+TEMPLATE_NOTE = (
+    "Isi data mulai baris di bawah header. Baris judul/catatan di atas ini boleh "
+    "diubah atau dikosongkan — aplikasi otomatis mencari baris header (baris yang "
+    "memuat 'Kode Barang')."
+)
+TEMPLATE_HEADER_ROW = 4  # 0-indexed -> Excel row 5, matching the real STOCKWISE export layout
+
+TEMPLATE_EXAMPLE_ROWS = [
+    {
+        "Kode Barang": "PUI.0019",
+        "Kategori Induk": "Post-Use Items",
+        "Kategori Anak 1": "NEED ASSESSMENT (BEKAS)",
+        "Kategori Anak 2": "",
+        "Kategori Anak 3": "",
+        "Deskripsi Barang": "(BEKAS) ACCU - ASPIRA / 145G51L - N150L / 150Ah 12V",
+        "UoM": "PCS",
+        "Perlu Blueprint?": "TIDAK",
+        "Nama Alias": "",
+        "Letak Gudang": "GUDANG 4",
+        "Letak Rak": "R1-A1",
+        "Blueprint IMG": "",
+        "Blueprint Detail PDF": "",
+        "Blueprint 3D View": "",
+        "Safety Stock": 10,
+        "Sisa Stok": "STOK 15 PCS",
+        "Lead Time": 5,
+    },
+    {
+        "Kode Barang": "PUI.0020",
+        "Kategori Induk": "Post-Use Items",
+        "Kategori Anak 1": "NEED ASSESSMENT (BEKAS)",
+        "Kategori Anak 2": "",
+        "Kategori Anak 3": "",
+        "Deskripsi Barang": "(BEKAS) DINAMO STARTER - TOYOTA AVANZA",
+        "UoM": "PCS",
+        "Perlu Blueprint?": "TIDAK",
+        "Nama Alias": "",
+        "Letak Gudang": "GUDANG 2",
+        "Letak Rak": "R2-B3",
+        "Blueprint IMG": "",
+        "Blueprint Detail PDF": "",
+        "Blueprint 3D View": "",
+        "Safety Stock": 10,
+        "Sisa Stok": "STOK 0 PCS",
+        "Lead Time": 21,
+    },
+]
+
+
+def build_template_bytes() -> bytes:
+    """Build a downloadable blank Excel template with the expected columns,
+    the same title-rows-then-header layout as a real STOCKWISE export, and a
+    couple of example rows (one AMAN, one TIDAK AMAN) to illustrate the
+    expected format — especially that 'Sisa Stok' accepts text like
+    'STOK 15 PCS'.
+    """
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        worksheet = workbook.add_worksheet("Inventory")
+        writer.sheets["Inventory"] = worksheet
+
+        title_fmt = workbook.add_format({"bold": True, "font_size": 14})
+        note_fmt = workbook.add_format({"italic": True, "font_color": "#898781", "text_wrap": True})
+        header_fmt = workbook.add_format(
+            {"bold": True, "bg_color": "#1F2937", "font_color": "#FFFFFF", "border": 1}
+        )
+        example_fmt = workbook.add_format({"font_color": "#52514e", "italic": True})
+
+        worksheet.write(0, 0, TEMPLATE_TITLE, title_fmt)
+        worksheet.merge_range(1, 0, 2, len(CANONICAL_COLUMNS) - 1, TEMPLATE_NOTE, note_fmt)
+
+        for col_idx, col_name in enumerate(CANONICAL_COLUMNS):
+            worksheet.write(TEMPLATE_HEADER_ROW, col_idx, col_name, header_fmt)
+            width = max(14, min(42, len(col_name) + 6))
+            worksheet.set_column(col_idx, col_idx, width)
+
+        for r, example in enumerate(TEMPLATE_EXAMPLE_ROWS, start=TEMPLATE_HEADER_ROW + 1):
+            for col_idx, col_name in enumerate(CANONICAL_COLUMNS):
+                worksheet.write(r, col_idx, example.get(col_name, ""), example_fmt)
+
+        worksheet.freeze_panes(TEMPLATE_HEADER_ROW + 1, 0)
+
+    return buffer.getvalue()
+
+
 def to_export_bytes(df: pd.DataFrame) -> bytes:
     """Build a formatted .xlsx file (colored Status column) and return its bytes."""
     export_df = df.copy()
