@@ -226,6 +226,55 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Replace every st.spinner (upload processing, and the "show_spinner" cache
+# messages on the export builders above) with a full-screen overlay of the
+# company logo spinning in the center, instead of Streamlit's tiny default
+# icon. This is a separate (f-string) markdown call — kept apart from the
+# main CSS block above, which is a plain string full of literal braces that
+# would otherwise all need escaping.
+st.markdown(
+    f"""
+    <style>
+    [data-testid="stSpinner"] {{
+        position: fixed;
+        inset: 0;
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(3px);
+    }}
+    [data-testid="stSpinner"] svg,
+    [data-testid="stSpinner"] i {{
+        display: none;
+    }}
+    [data-testid="stSpinner"]::before {{
+        content: "";
+        width: 76px;
+        height: 76px;
+        background: #fff url('{_logo_data_uri()}') center/contain no-repeat;
+        border-radius: 50%;
+        padding: 8px;
+        box-shadow: 0 8px 24px rgba(20, 50, 140, 0.28);
+        animation: sw-spin 1s linear infinite;
+    }}
+    [data-testid="stSpinner"] div {{
+        color: #14328c;
+        font-weight: 600;
+        font-size: 0.95rem;
+    }}
+    @keyframes sw-spin {{
+        from {{ transform: rotate(0deg); }}
+        to {{ transform: rotate(360deg); }}
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 def init_state():
     for key, default in [
