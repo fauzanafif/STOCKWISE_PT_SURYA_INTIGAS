@@ -31,8 +31,8 @@ def _style(fig, height=380):
         font=CHART_FONT,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
-    fig.update_xaxes(gridcolor="#e1e0d9", zeroline=False)
-    fig.update_yaxes(gridcolor="#e1e0d9", zeroline=False)
+    fig.update_xaxes(gridcolor="#dde6f4", zeroline=False)
+    fig.update_yaxes(gridcolor="#dde6f4", zeroline=False)
     return fig
 
 

@@ -40,9 +40,26 @@ st.markdown(
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
+    :root {
+        --sw-blue: #2a78d6;
+        --sw-blue-dark: #14328c;
+        --sw-blue-tint-06: rgba(20, 60, 160, 0.055);
+        --sw-blue-tint-12: rgba(20, 60, 160, 0.10);
+        --sw-blue-tint-20: rgba(20, 60, 160, 0.18);
+        --sw-blue-tint-30: rgba(20, 60, 160, 0.32);
+    }
+
     html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
 
     .block-container {padding-top: 1.6rem; padding-bottom: 2.5rem; max-width: 1300px;}
+
+    [data-testid="stAppViewContainer"] > .main {
+        background: linear-gradient(180deg, rgba(42, 120, 214, 0.05) 0%, rgba(42, 120, 214, 0) 260px);
+    }
+    [data-testid="stSidebar"] {
+        border-right: 1px solid var(--sw-blue-tint-20);
+    }
+    [data-testid="stSidebar"] h2 { color: var(--sw-blue-dark); font-size: 1.02rem; }
 
     /* ---- App header ---- */
     .sw-hero {
@@ -52,16 +69,17 @@ st.markdown(
     .sw-hero .sw-hero-logo {
         height: 42px; width: 42px; object-fit: contain;
     }
-    .sw-hero h1 { margin: 0; font-size: 1.85rem; font-weight: 800; letter-spacing: -0.02em; }
-    .sw-hero-caption { color: #898781; font-size: 0.95rem; margin: 2px 0 1.2rem 0; }
+    .sw-hero h1 { margin: 0; font-size: 1.85rem; font-weight: 800; letter-spacing: -0.02em; color: var(--sw-blue-dark); }
+    .sw-hero-caption { color: #5b6b8c; font-size: 0.95rem; margin: 2px 0 1.2rem 0; }
 
     /* ---- Section headers ---- */
     .sw-section-title {
         font-size: 1.15rem; font-weight: 700; margin: 0 0 2px 0; letter-spacing: -0.01em;
+        padding-left: 10px; border-left: 4px solid var(--sw-blue); color: var(--sw-blue-dark);
     }
-    .sw-section-caption { color: #898781; font-size: 0.85rem; margin-bottom: 0.6rem; }
+    .sw-section-caption { color: #5b6b8c; font-size: 0.85rem; margin-bottom: 0.6rem; padding-left: 10px; }
     .sw-chart-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 0px; }
-    .sw-chart-caption { color: #898781; font-size: 0.78rem; margin-bottom: 6px; }
+    .sw-chart-caption { color: #5b6b8c; font-size: 0.78rem; margin-bottom: 6px; }
 
     /* ---- KPI cards ---- */
     .sw-kpi-grid {
@@ -72,13 +90,14 @@ st.markdown(
     }
     .sw-kpi-card {
         display: flex; align-items: center; gap: 12px;
-        background: rgba(127, 127, 127, 0.06);
-        border: 1px solid rgba(127, 127, 127, 0.14);
+        background: var(--sw-blue-tint-06);
+        border: 1px solid var(--sw-blue-tint-20);
+        border-top: 3px solid var(--sw-blue-tint-30);
         border-radius: 14px;
         padding: 14px 16px;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s ease, transform 0.15s ease;
     }
-    .sw-kpi-card:hover { border-color: rgba(127, 127, 127, 0.3); }
+    .sw-kpi-card:hover { border-color: var(--sw-blue-tint-30); transform: translateY(-1px); }
     .sw-kpi-icon {
         flex-shrink: 0;
         width: 42px; height: 42px;
@@ -99,7 +118,7 @@ st.markdown(
     .sw-health-pct { font-weight: 800; }
     .sw-health-track {
         width: 100%; height: 10px; border-radius: 999px;
-        background: rgba(127, 127, 127, 0.15);
+        background: var(--sw-blue-tint-12);
         overflow: hidden;
     }
     .sw-health-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
@@ -110,31 +129,34 @@ st.markdown(
         padding: 12px 14px;
         border-radius: 10px;
         margin-bottom: 8px;
-        border: 1px solid rgba(127, 127, 127, 0.14);
+        border: 1px solid var(--sw-blue-tint-20);
         font-size: 0.92rem;
         line-height: 1.4;
     }
 
     /* ---- Tabs ---- */
     button[data-baseweb="tab"] { font-size: 0.98rem; font-weight: 600; padding: 8px 4px; }
+    button[data-baseweb="tab"][aria-selected="true"] { color: var(--sw-blue-dark); }
     div[data-testid="stMetric"] {
-        background: rgba(127, 127, 127, 0.06);
-        border: 1px solid rgba(127, 127, 127, 0.15);
+        background: var(--sw-blue-tint-06);
+        border: 1px solid var(--sw-blue-tint-20);
         border-radius: 10px;
         padding: 12px 16px;
     }
 
     /* ---- Welcome / empty state ---- */
     .sw-welcome-feature {
-        background: rgba(127, 127, 127, 0.05);
-        border: 1px solid rgba(127, 127, 127, 0.12);
+        background: var(--sw-blue-tint-06);
+        border: 1px solid var(--sw-blue-tint-12);
         border-radius: 12px;
         padding: 14px 16px;
         height: 100%;
+        transition: border-color 0.15s ease;
     }
+    .sw-welcome-feature:hover { border-color: var(--sw-blue-tint-30); }
     .sw-welcome-feature .emoji { font-size: 1.4rem; }
-    .sw-welcome-feature b { display: block; margin: 6px 0 2px 0; font-size: 0.95rem; }
-    .sw-welcome-feature p { margin: 0; font-size: 0.82rem; color: #898781; line-height: 1.4; }
+    .sw-welcome-feature b { display: block; margin: 6px 0 2px 0; font-size: 0.95rem; color: var(--sw-blue-dark); }
+    .sw-welcome-feature p { margin: 0; font-size: 0.82rem; color: #5b6b8c; line-height: 1.4; }
 
     /* ---- Sidebar brand ---- */
     @keyframes sw-brand-fade {
@@ -150,7 +172,7 @@ st.markdown(
         gap: 10px;
         padding: 4px 0 18px 0;
         margin-bottom: 10px;
-        border-bottom: 1px solid rgba(127, 127, 127, 0.16);
+        border-bottom: 1px solid var(--sw-blue-tint-20);
         animation: sw-brand-fade 0.5s ease;
     }
     .sw-sidebar-brand img {
