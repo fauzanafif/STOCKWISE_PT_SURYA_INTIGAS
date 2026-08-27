@@ -25,7 +25,10 @@ def render_kpis(df):
     total_stok = df["Sisa Stok"].sum()
     total_safety = df["Safety Stock"].sum()
     total_defisit = df["Defisit"].sum()
-    health_pct = round((barang_aman / total_barang) * 100, 1) if total_barang else 0.0
+    # Skor kesehatan menghitung BEP sebagai "aman" juga (barang tanpa kebijakan
+    # stok bukan berarti bermasalah seperti TIDAK AMAN) — beda dari kartu
+    # "Barang Aman" di atas, yang tetap Status == AMAN murni.
+    health_pct = round(((barang_aman + barang_bep) / total_barang) * 100, 1) if total_barang else 0.0
 
     cards = [
         ("📦", "Total Barang", f"{total_barang:,}", "Jumlah kode barang aktif", SERIES_BLUE),

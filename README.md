@@ -27,7 +27,8 @@ Dashboard inventory berbasis **Python + Streamlit + Pandas + Plotly**. Upload fi
 | Data processing | [pandas](https://pandas.pydata.org) `>=2.0` | Semua transformasi tabel: filter, groupby, kalkulasi kolom |
 | Numerik | [numpy](https://numpy.org) `>=1.26` | `np.where` untuk kolom Status, operasi vektor |
 | Baca Excel | [openpyxl](https://openpyxl.readthedocs.io) `>=3.1` | Parsing file `.xlsx` yang diupload, deteksi sheet & header |
-| Tulis Excel | [XlsxWriter](https://xlsxwriter.readthedocs.io) `>=3.1` | Generate file export & template dengan conditional formatting (warna AMAN/TIDAK AMAN) |
+| Tulis Excel | [XlsxWriter](https://xlsxwriter.readthedocs.io) `>=3.1` | Generate file export & template dengan conditional formatting (warna AMAN/TIDAK AMAN/BEP) |
+| Tulis PDF | [ReportLab](https://www.reportlab.com/opensource/) `>=4.0` | Generate laporan PDF (KPI, tabel barang, Procurement Priority) — pure Python, tidak butuh binary eksternal |
 | Charting | [Plotly](https://plotly.com/python/) `>=5.20` (`plotly.express` + `plotly.graph_objects`) | Semua 7 visualisasi di dashboard, dirender via `st.plotly_chart` |
 | State | `st.session_state` (bawaan Streamlit) | Menyimpan dataframe aktif & pengaturan (threshold lead time) antar-rerun, tidak butuh Redux/Zustand |
 | Styling | CSS custom (`st.markdown(unsafe_allow_html=True)`) di `app.py` | Font Inter (Google Fonts), kartu KPI, health bar, kartu insight |
@@ -44,7 +45,8 @@ STOCKWISE/
 ├── assets/logo.png             # logo aplikasi (di-embed sebagai base64)
 ├── data/                       # (opsional) tempat menaruh file Excel contoh
 ├── utils/
-│   ├── excel_handler.py        # deteksi sheet & baris header, fuzzy-match kolom, parsing "STOK 15 PCS", export & template
+│   ├── excel_handler.py        # deteksi sheet & baris header, fuzzy-match kolom, parsing "STOK 15 PCS", export & template Excel
+│   ├── pdf_export.py           # generator laporan PDF (KPI, tabel barang, Procurement Priority) via ReportLab
 │   ├── calculations.py         # pipeline reaktif: Selisih, Status, Defisit, Priority Score/Level
 │   ├── insights.py             # generator teks insight otomatis (rule-based)
 │   ├── recommendations.py      # generator rekomendasi procurement per baris (rule-based)
@@ -109,7 +111,7 @@ Tab **Dashboard** tersusun dari atas ke bawah dalam 4 blok. Semua angka di sini 
 | 🛡️ Total Safety Stock | Total `Safety Stock` dijumlahkan semua barang |
 | 📉 Defisit Stok | Total `Defisit` — makin besar makin banyak yang perlu dibeli. Warna kartu ini otomatis merah kalau > 0, hijau kalau 0 |
 
-Health bar di bawahnya menunjukkan persentase **Barang Aman** (bukan BEP, bukan Tidak Aman) terhadap total. Warna berubah otomatis: **hijau "Sehat"** ≥80%, **kuning "Perlu Perhatian"** 50–79%, **merah "Kritis"** <50%.
+Health bar di bawahnya menunjukkan persentase **Barang Aman + Barang BEP** terhadap total (BEP dihitung sebagai "aman" di skor ini — beda dari kartu "Barang Aman" di atas yang tetap Status = AMAN murni). Warna berubah otomatis: **hijau "Sehat"** ≥80%, **kuning "Perlu Perhatian"** 50–79%, **merah "Kritis"** <50%.
 
 ### 2. "Kondisi Inventory Saat Ini" — 3 chart
 
@@ -181,9 +183,9 @@ jika Selisih < 0 dan Lead Time <  Ambang Lead Time       → "Segera lakukan rep
 
 **7. Skor Kesehatan Inventory** (health bar KPI)
 ```
-Skor Kesehatan (%) = round(Barang Aman / Total Barang × 100, 1)
+Skor Kesehatan (%) = round((Barang Aman + Barang BEP) / Total Barang × 100, 1)
 ```
-≥80% → "Sehat" (hijau), 50–79.9% → "Perlu Perhatian" (kuning), <50% → "Kritis" (merah).
+BEP dihitung sebagai "aman" khusus untuk skor ini (beda dari kartu KPI "Barang Aman" yang tetap Status = AMAN murni). ≥80% → "Sehat" (hijau), 50–79.9% → "Perlu Perhatian" (kuning), <50% → "Kritis" (merah).
 
 ### Insight Otomatis
 
@@ -221,7 +223,13 @@ Buka tab **Data Inventory**. Semua kolom master (Kode Barang, kategori, deskrips
 
 ## Export Data
 
-Buka tab **Export**, pilih **Seluruh Data** atau **Data Terfilter**, lalu unduh sebagai Excel (dengan warna conditional Status AMAN=hijau/TIDAK AMAN=merah) atau CSV. Hasil export selalu menyertakan `Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, dan `Rekomendasi` — bukan cuma data mentahnya.
+Buka tab **Export**, pilih **Seluruh Data** atau **Data Terfilter**, lalu unduh dalam 3 format:
+
+- **Excel (.xlsx)** — data lengkap semua kolom, dengan warna conditional di kolom Status (AMAN=hijau, TIDAK AMAN=merah, BEP=ungu). Untuk diolah lagi (pivot, formula, dll).
+- **PDF** — laporan siap cetak (`utils/pdf_export.py`, dibangun dengan [ReportLab](https://www.reportlab.com/opensource/), tidak butuh binary eksternal seperti wkhtmltopdf), landscape A4, isinya: ringkasan KPI, tabel daftar barang (Kode, Deskripsi, Kategori Induk, Gudang, UoM, Safety Stock, Sisa Stok, Selisih, Status berwarna), dan lampiran **Procurement Priority** (barang TIDAK AMAN diurutkan Priority Score, dengan Priority Level berwarna) — beda dari Excel/CSV, PDF ini bukan dump data mentah tapi ringkasan yang sudah dikurasi kolomnya biar enak dibaca/dicetak.
+- **CSV** — data lengkap semua kolom, untuk sistem lain yang butuh format polos.
+
+Excel dan CSV selalu menyertakan `Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, dan `Rekomendasi` — bukan cuma data mentahnya.
 
 ## Bagaimana Reactive Calculation Bekerja
 

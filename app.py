@@ -19,6 +19,7 @@ from components.kpi import render_kpis
 from utils.calculations import STATUS_TIDAK_AMAN, recalculate, suggest_lead_time_threshold
 from utils.excel_handler import build_template_bytes, load_dropdown_options, load_excel, to_export_bytes
 from utils.insights import generate_insights
+from utils.pdf_export import build_pdf_bytes
 from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING
 
 LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
@@ -625,7 +626,7 @@ def main():
         export_df = full_df if export_scope == "Seluruh Data" else filtered_final
         st.caption(f"Akan mengekspor **{len(export_df):,}** baris.")
 
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             st.download_button(
                 "⬇️ Download Excel",
@@ -635,6 +636,15 @@ def main():
                 use_container_width=True,
             )
         with col2:
+            st.download_button(
+                "⬇️ Download PDF",
+                data=build_pdf_bytes(export_df, export_scope, st.session_state.file_name or ""),
+                file_name="stockwise_laporan.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                help="Laporan cetak: ringkasan KPI, daftar barang, dan Procurement Priority.",
+            )
+        with col3:
             st.download_button(
                 "⬇️ Download CSV",
                 data=export_df.to_csv(index=False).encode("utf-8-sig"),

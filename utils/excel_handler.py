@@ -451,6 +451,7 @@ def to_export_bytes(df: pd.DataFrame) -> bytes:
             n_rows = len(export_df)
             aman_fmt = workbook.add_format({"bg_color": "#D1FAE5", "font_color": "#065F46"})
             tidak_aman_fmt = workbook.add_format({"bg_color": "#FEE2E2", "font_color": "#991B1B"})
+            bep_fmt = workbook.add_format({"bg_color": "#EDE6FA", "font_color": "#5B3FA6"})
             worksheet.conditional_format(
                 1, status_col, n_rows, status_col,
                 {"type": "cell", "criteria": "equal to", "value": '"TIDAK AMAN"', "format": tidak_aman_fmt},
@@ -458,6 +459,10 @@ def to_export_bytes(df: pd.DataFrame) -> bytes:
             worksheet.conditional_format(
                 1, status_col, n_rows, status_col,
                 {"type": "cell", "criteria": "equal to", "value": '"AMAN"', "format": aman_fmt},
+            )
+            worksheet.conditional_format(
+                1, status_col, n_rows, status_col,
+                {"type": "cell", "criteria": "equal to", "value": '"BEP"', "format": bep_fmt},
             )
 
     return buffer.getvalue()
