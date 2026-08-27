@@ -2,8 +2,8 @@
 labeled in plain Indonesian so the dashboard reads clearly at a glance."""
 import streamlit as st
 
-from utils.calculations import STATUS_TIDAK_AMAN
-from utils.theme import COLOR_AMAN, COLOR_TIDAK_AMAN, COLOR_WARNING, SERIES_BLUE, SERIES_ORANGE
+from utils.calculations import STATUS_AMAN, STATUS_BEP, STATUS_TIDAK_AMAN
+from utils.theme import COLOR_AMAN, COLOR_BEP, COLOR_TIDAK_AMAN, COLOR_WARNING, SERIES_BLUE, SERIES_ORANGE
 
 _CARD = """
 <div class="sw-kpi-card">
@@ -19,8 +19,9 @@ _CARD = """
 
 def render_kpis(df):
     total_barang = len(df)
-    barang_aman = int((df["Status"] != STATUS_TIDAK_AMAN).sum())
+    barang_aman = int((df["Status"] == STATUS_AMAN).sum())
     barang_tidak_aman = int((df["Status"] == STATUS_TIDAK_AMAN).sum())
+    barang_bep = int((df["Status"] == STATUS_BEP).sum())
     total_stok = df["Sisa Stok"].sum()
     total_safety = df["Safety Stock"].sum()
     total_defisit = df["Defisit"].sum()
@@ -30,6 +31,7 @@ def render_kpis(df):
         ("📦", "Total Barang", f"{total_barang:,}", "Jumlah kode barang aktif", SERIES_BLUE),
         ("✅", "Barang Aman", f"{barang_aman:,}", "Stok mencukupi safety stock", COLOR_AMAN),
         ("🚨", "Barang Tidak Aman", f"{barang_tidak_aman:,}", "Perlu perhatian / replenishment", COLOR_TIDAK_AMAN),
+        ("🎯", "Barang BEP", f"{barang_bep:,}", "Sisa Stok & Safety Stock sama-sama 0", COLOR_BEP),
         ("🏬", "Total Stok", f"{total_stok:,.0f}", "Total unit tersedia di gudang", SERIES_BLUE),
         ("🛡️", "Total Safety Stock", f"{total_safety:,.0f}", "Total batas aman minimum", SERIES_ORANGE),
         (

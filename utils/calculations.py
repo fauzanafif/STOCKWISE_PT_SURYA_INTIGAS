@@ -7,6 +7,7 @@ from utils.recommendations import compute_recommendation
 
 STATUS_AMAN = "AMAN"
 STATUS_TIDAK_AMAN = "TIDAK AMAN"
+STATUS_BEP = "BEP"
 
 DEFAULT_LEAD_TIME_THRESHOLD = 14
 
@@ -25,8 +26,15 @@ def compute_selisih(df: pd.DataFrame) -> pd.Series:
     return df["Sisa Stok"].fillna(0) - df["Safety Stock"].fillna(0)
 
 
-def compute_status(selisih: pd.Series) -> pd.Series:
-    return np.where(selisih >= 0, STATUS_AMAN, STATUS_TIDAK_AMAN)
+def compute_status(df: pd.DataFrame) -> pd.Series:
+    """AMAN/TIDAK AMAN follow Selisih, except BEP: Sisa Stok dan Safety Stock
+    yang keduanya 0 ("break-even" — belum ada kebijakan stok yang jalan),
+    yang menang di atas hasil Selisih >= 0.
+    """
+    selisih = df["Selisih"]
+    status = np.where(selisih >= 0, STATUS_AMAN, STATUS_TIDAK_AMAN)
+    is_bep = (df["Sisa Stok"].fillna(0) == 0) & (df["Safety Stock"].fillna(0) == 0)
+    return np.where(is_bep, STATUS_BEP, status)
 
 
 def compute_defisit(df: pd.DataFrame) -> pd.Series:
@@ -66,7 +74,7 @@ def recalculate(df: pd.DataFrame, lead_time_threshold: int = DEFAULT_LEAD_TIME_T
     df[text_cols] = df[text_cols].fillna("").astype(str).replace("nan", "")
 
     df["Selisih"] = compute_selisih(df)
-    df["Status"] = compute_status(df["Selisih"])
+    df["Status"] = compute_status(df)
     df["Defisit"] = compute_defisit(df)
     df["Priority Score"] = compute_priority_score(df)
     df["Priority Level"] = compute_priority_level(df, lead_time_threshold)

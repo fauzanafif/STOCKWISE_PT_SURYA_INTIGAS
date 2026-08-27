@@ -1,7 +1,7 @@
 """Generate plain-language inventory insights from the active (filtered) dataset."""
 import pandas as pd
 
-from utils.calculations import STATUS_TIDAK_AMAN
+from utils.calculations import STATUS_BEP, STATUS_TIDAK_AMAN
 
 
 def generate_insights(df: pd.DataFrame, lead_time_threshold: int) -> list:
@@ -12,10 +12,18 @@ def generate_insights(df: pd.DataFrame, lead_time_threshold: int) -> list:
         insights.append(("info", "ℹ️ Belum ada data yang cocok dengan filter ini."))
         return insights
 
+    bep = df[df["Status"] == STATUS_BEP]
+    if not bep.empty:
+        insights.append((
+            "info",
+            f"🎯 Ada {len(bep)} barang berstatus BEP (Sisa Stok & Safety Stock sama-sama 0) — "
+            "cek apakah barang ini memang non-aktif atau datanya belum diisi.",
+        ))
+
     unsafe = df[df["Status"] == STATUS_TIDAK_AMAN]
 
     if unsafe.empty:
-        insights.append(("success", "✅ Semua stok aman, masih di atas safety stock."))
+        insights.append(("success", "✅ Semua stok lainnya aman, masih di atas safety stock."))
         return insights
 
     insights.append(("warning", f"⚠️ Ada {len(unsafe)} barang yang stoknya di bawah safety stock."))

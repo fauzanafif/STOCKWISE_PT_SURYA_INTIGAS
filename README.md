@@ -97,31 +97,32 @@ Tab **Dashboard** tersusun dari atas ke bawah dalam 4 blok. Semua angka di sini 
 
 ### 1. KPI Cards + Health Bar (paling atas)
 
-6 kartu angka besar, lalu satu progress bar "Skor Kesehatan Inventory":
+7 kartu angka besar, lalu satu progress bar "Skor Kesehatan Inventory":
 
 | Kartu | Arti |
 |---|---|
 | 📦 Total Barang | Jumlah baris/kode barang di data yang sedang difilter |
-| ✅ Barang Aman | Jumlah barang dengan Status ≠ TIDAK AMAN |
+| ✅ Barang Aman | Jumlah barang dengan Status = AMAN |
 | 🚨 Barang Tidak Aman | Jumlah barang dengan Status = TIDAK AMAN |
+| 🎯 Barang BEP | Jumlah barang dengan Status = BEP (`Sisa Stok` dan `Safety Stock` sama-sama 0) |
 | 🏬 Total Stok | Total `Sisa Stok` dijumlahkan semua barang |
 | 🛡️ Total Safety Stock | Total `Safety Stock` dijumlahkan semua barang |
 | 📉 Defisit Stok | Total `Defisit` — makin besar makin banyak yang perlu dibeli. Warna kartu ini otomatis merah kalau > 0, hijau kalau 0 |
 
-Health bar di bawahnya menunjukkan persentase barang aman terhadap total. Warna berubah otomatis: **hijau "Sehat"** ≥80%, **kuning "Perlu Perhatian"** 50–79%, **merah "Kritis"** <50%.
+Health bar di bawahnya menunjukkan persentase **Barang Aman** (bukan BEP, bukan Tidak Aman) terhadap total. Warna berubah otomatis: **hijau "Sehat"** ≥80%, **kuning "Perlu Perhatian"** 50–79%, **merah "Kritis"** <50%.
 
 ### 2. "Kondisi Inventory Saat Ini" — 3 chart
 
-- **Donut "Status Inventory"** (kiri) — proporsi AMAN (hijau) vs TIDAK AMAN (merah). Cara baca: makin besar irisan merah, makin banyak barang di bawah safety stock.
-- **Bar horizontal "Top Barang dengan Defisit Terbesar"** (kanan) — 10 barang dengan `Defisit` terbesar, diurutkan menurun, warna gradasi biru sesuai besarnya defisit. Kalau tidak ada barang defisit, chart ini diganti pesan sukses.
+- **Donut "Status Inventory"** (kiri) — proporsi AMAN (hijau), TIDAK AMAN (merah), dan BEP (ungu). Cara baca: makin besar irisan merah, makin banyak barang di bawah safety stock; irisan ungu menandakan barang yang belum punya kebijakan stok sama sekali (stok maupun safety stock-nya 0).
+- **Bar horizontal "Top Barang dengan Defisit Terbesar"** (kanan) — 10 barang dengan `Defisit` terbesar, diurutkan menurun, warna gradasi biru sesuai besarnya defisit. Barang BEP tidak pernah muncul di sini karena Defisit-nya selalu 0. Kalau tidak ada barang defisit, chart ini diganti pesan sukses.
 - **Grouped bar "Stok vs Safety Stock"** (lebar penuh) — untuk 10 barang dengan defisit terbesar yang sama, membandingkan batang biru (`Sisa Stok`) vs oranye (`Safety Stock`) berdampingan. Kalau batang biru lebih pendek dari oranye, barang itu di bawah ambang aman.
 
 ### 3. "Analisis per Lokasi & Kategori" — 4 chart, 2 kolom
 
-- **Stacked bar "Inventory per Gudang — Status"** — per `Letak Gudang`, tumpukan hijau (jumlah AMAN) + merah (jumlah TIDAK AMAN). Gudang diurutkan dari yang jumlah barangnya paling banyak.
+- **Stacked bar "Inventory per Gudang — Status"** — per `Letak Gudang`, tumpukan hijau (AMAN) + merah (TIDAK AMAN) + ungu (BEP). Gudang diurutkan dari yang jumlah barangnya paling banyak.
 - **Grouped bar "Inventory per Gudang — Stok vs Safety Stock"** — per gudang, total `Sisa Stok` (biru) vs total `Safety Stock` (oranye) dijumlahkan semua barang di gudang itu.
 - **Stacked bar "Inventory per Kategori Induk"** — logika sama seperti chart gudang, tapi dikelompokkan per `Kategori Induk`.
-- **Scatter "Lead Time vs Defisit"** — setiap titik = satu barang (bukan agregat). Sumbu X = `Lead Time`, sumbu Y = `Defisit`, warna titik = Status, ukuran titik makin besar = defisit makin besar. **Cara baca paling penting**: titik merah besar yang letaknya di kanan atas (lead time lama + defisit besar) adalah kandidat prioritas procurement tertinggi — logika yang sama persis dengan `Priority Score`.
+- **Scatter "Lead Time vs Defisit"** — setiap titik = satu barang (bukan agregat). Sumbu X = `Lead Time`, sumbu Y = `Defisit`, warna titik = Status (hijau/merah/ungu), ukuran titik makin besar = defisit makin besar. Titik BEP selalu menempel di Defisit = 0. **Cara baca paling penting**: titik merah besar yang letaknya di kanan atas (lead time lama + defisit besar) adalah kandidat prioritas procurement tertinggi — logika yang sama persis dengan `Priority Score`.
 
 ### 4. Inventory Insight (paling bawah)
 
@@ -141,13 +142,15 @@ Nilai kosong dianggap 0 sebelum dikurangkan. Selisih negatif = stok sudah di baw
 ```
 Status = "AMAN"       jika Selisih ≥ 0
 Status = "TIDAK AMAN" jika Selisih <  0
+Status = "BEP"        jika Sisa Stok = 0  DAN  Safety Stock = 0   (menang di atas dua aturan di atas)
 ```
+BEP ("Break Even Point" dalam konteks aplikasi ini berarti stok maupun ambang batas amannya sama-sama 0) dicek terpisah dari Selisih: `Sisa Stok = 0` dan `Safety Stock = 0` membuat `Selisih = 0` juga, yang secara formula murni AMAN — tapi kondisi ini lebih menandakan barang yang belum diberi kebijakan stok sama sekali (bukan benar-benar "aman"), jadi dipisahkan jadi status sendiri.
 
 **3. Defisit** (seberapa jauh di bawah safety stock, tidak pernah negatif)
 ```
 Defisit = max(Safety Stock − Sisa Stok, 0)
 ```
-Barang yang AMAN otomatis punya Defisit = 0 (karena `Safety Stock − Sisa Stok` akan negatif lalu dipangkas ke 0).
+Barang AMAN maupun BEP otomatis punya Defisit = 0 (karena `Safety Stock − Sisa Stok` akan ≤ 0 lalu dipangkas ke 0).
 
 **4. Priority Score** (dasar pengurutan tab Procurement)
 ```
@@ -160,7 +163,7 @@ Bobot `2.0` untuk Defisit dan `1.0` untuk Lead Time adalah default hardcoded di 
 
 **5. Priority Level**
 ```
-jika Status = AMAN → "LOW"
+jika Status = AMAN atau BEP → "LOW"
 jika Status = TIDAK AMAN:
     threshold_defisit = median(Defisit dari semua barang TIDAK AMAN)
     "HIGH"   jika Defisit ≥ threshold_defisit  ATAU  Lead Time ≥ Ambang Lead Time
@@ -170,9 +173,10 @@ jika Status = TIDAK AMAN:
 
 **6. Rekomendasi** (teks per baris)
 ```
-jika Selisih ≥ 0                  → "Stok aman, tidak perlu replenishment segera."
-jika Selisih < 0 dan Lead Time ≥ Ambang Lead Time → "Prioritas tinggi untuk procurement."
-jika Selisih < 0 dan Lead Time <  Ambang Lead Time → "Segera lakukan replenishment."
+jika Selisih ≥ 0 dan Sisa Stok = 0 dan Safety Stock = 0 → "Stok dan Safety Stock sama-sama 0 (BEP) — cek apakah barang ini memang non-aktif atau datanya belum diisi."
+jika Selisih ≥ 0 (selain kondisi BEP di atas)            → "Stok aman, tidak perlu replenishment segera."
+jika Selisih < 0 dan Lead Time ≥ Ambang Lead Time        → "Prioritas tinggi untuk procurement."
+jika Selisih < 0 dan Lead Time <  Ambang Lead Time       → "Segera lakukan replenishment."
 ```
 
 **7. Skor Kesehatan Inventory** (health bar KPI)
@@ -185,10 +189,11 @@ Skor Kesehatan (%) = round(Barang Aman / Total Barang × 100, 1)
 
 `utils/insights.py` menghasilkan kalimat berdasarkan aturan berikut, dievaluasi terhadap data yang sedang difilter:
 
-1. Kalau tidak ada barang TIDAK AMAN → hanya tampil "✅ Semua stok aman, masih di atas safety stock."
-2. Kalau ada → tampil jumlah barang TIDAK AMAN.
-3. Barang dengan `Defisit` terbesar (`Defisit.idxmax()`) disebutkan namanya secara spesifik beserta jumlah kekurangannya.
-4. Kalau ada barang TIDAK AMAN dengan `Lead Time ≥ Ambang Lead Time`, jumlahnya disebutkan sebagai "yang paling perlu diprioritaskan buat dibeli".
+1. Kalau ada barang berstatus BEP → tampil dulu jumlahnya, sebagai pengingat untuk dicek apakah barang itu memang non-aktif atau datanya belum diisi.
+2. Kalau tidak ada barang TIDAK AMAN → tampil "✅ Semua stok lainnya aman, masih di atas safety stock."
+3. Kalau ada → tampil jumlah barang TIDAK AMAN.
+4. Barang dengan `Defisit` terbesar (`Defisit.idxmax()`) disebutkan namanya secara spesifik beserta jumlah kekurangannya.
+5. Kalau ada barang TIDAK AMAN dengan `Lead Time ≥ Ambang Lead Time`, jumlahnya disebutkan sebagai "yang paling perlu diprioritaskan buat dibeli".
 
 ## Tab Procurement
 

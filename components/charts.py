@@ -1,7 +1,7 @@
 """Plotly visualizations for the inventory dashboard.
 
 Colors follow a fixed, reserved role scheme:
-  - Status (AMAN / TIDAK AMAN) always uses the same two colors everywhere.
+  - Status (AMAN / TIDAK AMAN / BEP) always uses the same three colors everywhere.
   - Two-series comparisons (Sisa Stok vs Safety Stock) use fixed categorical
     slots 1 (blue) and 2 (orange), in that order, every time.
   - Pure-magnitude bars (e.g. top deficit) use a single sequential blue ramp.
@@ -9,9 +9,10 @@ Colors follow a fixed, reserved role scheme:
 import plotly.express as px
 import plotly.graph_objects as go
 
-from utils.calculations import STATUS_AMAN, STATUS_TIDAK_AMAN
+from utils.calculations import STATUS_AMAN, STATUS_BEP, STATUS_TIDAK_AMAN
 from utils.theme import (
     COLOR_AMAN,
+    COLOR_BEP,
     COLOR_TIDAK_AMAN,
     SEQUENTIAL_BLUE,
     SERIES_BLUE,
@@ -37,7 +38,7 @@ def _style(fig, height=380):
 
 
 def status_donut(df):
-    counts = df["Status"].value_counts().reindex([STATUS_AMAN, STATUS_TIDAK_AMAN]).fillna(0)
+    counts = df["Status"].value_counts().reindex([STATUS_AMAN, STATUS_TIDAK_AMAN, STATUS_BEP]).fillna(0)
     fig = go.Figure(
         data=[
             go.Pie(
@@ -90,12 +91,13 @@ def warehouse_status_bar(df):
         df.groupby("Letak Gudang")["Status"]
         .value_counts()
         .unstack(fill_value=0)
-        .reindex(columns=[STATUS_AMAN, STATUS_TIDAK_AMAN], fill_value=0)
+        .reindex(columns=[STATUS_AMAN, STATUS_TIDAK_AMAN, STATUS_BEP], fill_value=0)
     )
     grouped = grouped.loc[grouped.sum(axis=1).sort_values(ascending=False).index]
     fig = go.Figure()
     fig.add_bar(name=STATUS_AMAN, x=grouped.index, y=grouped[STATUS_AMAN], marker_color=COLOR_AMAN)
     fig.add_bar(name=STATUS_TIDAK_AMAN, x=grouped.index, y=grouped[STATUS_TIDAK_AMAN], marker_color=COLOR_TIDAK_AMAN)
+    fig.add_bar(name=STATUS_BEP, x=grouped.index, y=grouped[STATUS_BEP], marker_color=COLOR_BEP)
     fig.update_layout(barmode="stack", xaxis_title="", yaxis_title="Jumlah Barang")
     return _style(fig)
 
@@ -119,12 +121,13 @@ def category_status_bar(df):
         df.groupby("Kategori Induk")["Status"]
         .value_counts()
         .unstack(fill_value=0)
-        .reindex(columns=[STATUS_AMAN, STATUS_TIDAK_AMAN], fill_value=0)
+        .reindex(columns=[STATUS_AMAN, STATUS_TIDAK_AMAN, STATUS_BEP], fill_value=0)
     )
     grouped = grouped.loc[grouped.sum(axis=1).sort_values(ascending=False).index]
     fig = go.Figure()
     fig.add_bar(name=STATUS_AMAN, x=grouped.index, y=grouped[STATUS_AMAN], marker_color=COLOR_AMAN)
     fig.add_bar(name=STATUS_TIDAK_AMAN, x=grouped.index, y=grouped[STATUS_TIDAK_AMAN], marker_color=COLOR_TIDAK_AMAN)
+    fig.add_bar(name=STATUS_BEP, x=grouped.index, y=grouped[STATUS_BEP], marker_color=COLOR_BEP)
     fig.update_layout(barmode="stack", xaxis_title="", yaxis_title="Jumlah Barang")
     return _style(fig)
 
@@ -141,7 +144,7 @@ def lead_time_scatter(df):
         color_discrete_map=STATUS_COLOR_MAP,
         size="Defisit" if df["Defisit"].sum() > 0 else None,
         hover_name=label_col,
-        category_orders={"Status": [STATUS_AMAN, STATUS_TIDAK_AMAN]},
+        category_orders={"Status": [STATUS_AMAN, STATUS_TIDAK_AMAN, STATUS_BEP]},
     )
     fig.update_layout(xaxis_title="Lead Time", yaxis_title="Defisit")
     return _style(fig)

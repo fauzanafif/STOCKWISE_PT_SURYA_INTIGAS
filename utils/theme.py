@@ -1,14 +1,15 @@
 """Shared color palette — used by KPI cards, charts, and status badges alike
 so a color always means the same thing everywhere in the dashboard.
 """
-from utils.calculations import STATUS_AMAN, STATUS_TIDAK_AMAN
+from utils.calculations import STATUS_AMAN, STATUS_BEP, STATUS_TIDAK_AMAN
 
 COLOR_AMAN = "#0ca30c"
 COLOR_TIDAK_AMAN = "#d03b3b"
+COLOR_BEP = "#8a63d2"
 COLOR_WARNING = "#c98500"
 COLOR_NEUTRAL = "#52514e"
 
-STATUS_COLOR_MAP = {STATUS_AMAN: COLOR_AMAN, STATUS_TIDAK_AMAN: COLOR_TIDAK_AMAN}
+STATUS_COLOR_MAP = {STATUS_AMAN: COLOR_AMAN, STATUS_TIDAK_AMAN: COLOR_TIDAK_AMAN, STATUS_BEP: COLOR_BEP}
 
 SERIES_BLUE = "#2a78d6"
 SERIES_ORANGE = "#eb6834"
