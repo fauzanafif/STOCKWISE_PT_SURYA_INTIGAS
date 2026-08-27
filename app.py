@@ -641,7 +641,15 @@ def main():
                 color = priority_colors.get(val)
                 return f"background-color:{color}26; color:{color}; font-weight:700;" if color else ""
 
-            styled = unsafe[cols].style.map(_style_priority, subset=["Priority Level"])
+            # Without an explicit format, pandas Styler prints floats at full
+            # precision (e.g. "50.000000" instead of "50") — these columns are
+            # always whole numbers, so round the display to 0 decimals.
+            number_cols = [c for c in ["Safety Stock", "Sisa Stok", "Defisit", "Lead Time", "Priority Score"] if c in cols]
+            styled = (
+                unsafe[cols]
+                .style.format({c: "{:,.0f}" for c in number_cols})
+                .map(_style_priority, subset=["Priority Level"])
+            )
             st.dataframe(styled, use_container_width=True, hide_index=True)
 
     with tab4:
