@@ -34,6 +34,34 @@ def _logo_data_uri() -> str:
     return f"data:image/png;base64,{encoded}"
 
 
+# Streamlit reruns the whole script — including every tab's body — on every
+# interaction (upload, cell edit, filter change), whether or not the Export
+# tab is the one actually visible. Without caching, building the Excel/PDF/CSV
+# bytes (the PDF especially — it paginates every row into styled Paragraphs)
+# would happen again on every single rerun. Caching on the export dataframe's
+# content means it's only rebuilt when the data actually changes.
+@st.cache_data(show_spinner="Menyiapkan file export...")
+def _cached_excel_bytes(df: pd.DataFrame) -> bytes:
+    return to_export_bytes(df)
+
+
+@st.cache_data(show_spinner="Menyiapkan file export...")
+def _cached_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+@st.cache_data(show_spinner="Menyiapkan laporan PDF...")
+def _cached_pdf_bytes(df: pd.DataFrame, scope_label: str, file_name: str) -> bytes:
+    return build_pdf_bytes(df, scope_label, file_name)
+
+
+# Static content (no arguments) — still worth caching since it's otherwise
+# rebuilt from scratch on every single rerun even though it never changes.
+@st.cache_data
+def _cached_template_bytes() -> bytes:
+    return build_template_bytes()
+
+
 st.set_page_config(page_title="STOCKWISE", page_icon=str(LOGO_PATH), layout="wide")
 
 st.markdown(
@@ -420,7 +448,7 @@ def render_welcome():
     st.markdown("##### Belum punya file? Pakai template ini aja:")
     st.download_button(
         "📥 Download Template Excel",
-        data=build_template_bytes(),
+        data=_cached_template_bytes(),
         file_name="template_stockwise.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="template_download_welcome",
@@ -449,7 +477,7 @@ def main():
     uploaded = st.sidebar.file_uploader("Upload Excel Inventory", type=["xlsx", "xls"])
     st.sidebar.download_button(
         "📥 Download Template Excel",
-        data=build_template_bytes(),
+        data=_cached_template_bytes(),
         file_name="template_stockwise.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
@@ -630,7 +658,7 @@ def main():
         with col1:
             st.download_button(
                 "⬇️ Download Excel",
-                data=to_export_bytes(export_df),
+                data=_cached_excel_bytes(export_df),
                 file_name="stockwise_export.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
@@ -638,7 +666,7 @@ def main():
         with col2:
             st.download_button(
                 "⬇️ Download PDF",
-                data=build_pdf_bytes(export_df, export_scope, st.session_state.file_name or ""),
+                data=_cached_pdf_bytes(export_df, export_scope, st.session_state.file_name or ""),
                 file_name="stockwise_laporan.pdf",
                 mime="application/pdf",
                 use_container_width=True,
@@ -647,7 +675,7 @@ def main():
         with col3:
             st.download_button(
                 "⬇️ Download CSV",
-                data=export_df.to_csv(index=False).encode("utf-8-sig"),
+                data=_cached_csv_bytes(export_df),
                 file_name="stockwise_export.csv",
                 mime="text/csv",
                 use_container_width=True,
