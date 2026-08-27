@@ -135,6 +135,40 @@ st.markdown(
     .sw-welcome-feature .emoji { font-size: 1.4rem; }
     .sw-welcome-feature b { display: block; margin: 6px 0 2px 0; font-size: 0.95rem; }
     .sw-welcome-feature p { margin: 0; font-size: 0.82rem; color: #898781; line-height: 1.4; }
+
+    /* ---- Sidebar brand ---- */
+    @keyframes sw-brand-fade {
+        from { opacity: 0; transform: translateY(-6px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes sw-brand-glow {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(20, 50, 140, 0.18), 0 0 0 0 rgba(20, 50, 140, 0.35), 0 6px 16px rgba(20, 50, 140, 0.22); }
+        50% { box-shadow: 0 0 0 1px rgba(20, 50, 140, 0.18), 0 0 0 8px rgba(20, 50, 140, 0), 0 6px 16px rgba(20, 50, 140, 0.22); }
+    }
+    .sw-sidebar-brand {
+        display: flex; flex-direction: column; align-items: center;
+        gap: 10px;
+        padding: 4px 0 18px 0;
+        margin-bottom: 10px;
+        border-bottom: 1px solid rgba(127, 127, 127, 0.16);
+        animation: sw-brand-fade 0.5s ease;
+    }
+    .sw-sidebar-brand img {
+        height: 64px; width: 64px; object-fit: contain;
+        border-radius: 50%;
+        background: #fff;
+        padding: 7px;
+        animation: sw-brand-glow 2.8s ease-in-out infinite;
+        transition: transform 0.25s ease;
+    }
+    .sw-sidebar-brand img:hover {
+        transform: scale(1.08) rotate(-3deg);
+    }
+    .sw-sidebar-brand-name {
+        font-weight: 800; font-size: 0.85rem; letter-spacing: 0.07em;
+        text-align: center; text-transform: uppercase;
+        color: #14328c;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -377,11 +411,17 @@ def main():
 
     st.markdown(
         f'<div class="sw-hero"><img class="sw-hero-logo" src="{_logo_data_uri()}"><h1>STOCKWISE</h1></div>'
-        '<div class="sw-hero-caption">Upload, edit, pantau stok — semuanya update otomatis, gak perlu refresh.</div>',
+        '<div class="sw-hero-caption">Upload, edit, pantau stok dan semuanya update otomatis, gak perlu refresh.</div>',
         unsafe_allow_html=True,
     )
 
-    st.sidebar.markdown("### 📁 Data")
+    st.sidebar.markdown(
+        f'<div class="sw-sidebar-brand">'
+        f'<img src="{_logo_data_uri()}" alt="Logo PT Surya Inti Gas">'
+        f'<div class="sw-sidebar-brand-name">PT Surya Inti Gas</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
     uploaded = st.sidebar.file_uploader("Upload Excel Inventory", type=["xlsx", "xls"])
     st.sidebar.download_button(
         "📥 Download Template Excel",
