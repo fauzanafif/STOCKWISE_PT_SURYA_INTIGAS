@@ -176,10 +176,10 @@ st.markdown(
         animation: sw-brand-fade 0.5s ease;
     }
     .sw-sidebar-brand img {
-        height: 64px; width: 64px; object-fit: contain;
+        height: 92px; width: 92px; object-fit: contain;
         border-radius: 50%;
         background: #fff;
-        padding: 7px;
+        padding: 9px;
         animation: sw-brand-glow 2.8s ease-in-out infinite;
         transition: transform 0.25s ease;
     }
@@ -187,9 +187,10 @@ st.markdown(
         transform: scale(1.08) rotate(-3deg);
     }
     .sw-sidebar-brand-name {
-        font-weight: 800; font-size: 0.85rem; letter-spacing: 0.07em;
+        font-weight: 800; font-size: 1.05rem; letter-spacing: 0.06em;
         text-align: center; text-transform: uppercase;
         color: #14328c;
+        line-height: 1.3;
     }
     </style>
     """,
@@ -389,8 +390,8 @@ def render_welcome():
         """
         <div style="padding: 6px 0 18px 0;">
         <p style="font-size: 1rem; opacity: 0.85; max-width: 720px;">
-        Upload Excel inventory kamu, edit langsung di tabel, dan sisanya — KPI, chart, insight,
-        rekomendasi pembelian — ikut update sendiri. Gak perlu refresh.
+        Upload Excel inventory, edit langsung di tabel, dan sisanya KPI, chart, insight,
+        rekomendasi pembelian auto ikut update sendiri. <b> Gak perlu refresh.</b>
         </p>
         </div>
         """,
