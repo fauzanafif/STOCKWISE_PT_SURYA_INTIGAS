@@ -214,7 +214,8 @@ Semua filter berikut bekerja bersama (AND) dan langsung memengaruhi KPI, ke-7 ch
 
 - Kategori Induk, Kategori Anak 1/2/3, UoM, Letak Gudang, Status, "Perlu Blueprint?" (multiselect)
 - Pencarian bebas di Kode Barang / Deskripsi Barang
-- Range Lead Time (slider min–max)
+- Range Lead Time (angka min–max)
+- Range Selisih (angka min–max) — bisa negatif, karena `Selisih = Sisa Stok − Safety Stock` negatif artinya TIDAK AMAN. Berguna buat misalnya nyari barang yang cuma "dikit di bawah" safety stock (mis. Selisih -5 sampai -1), atau barang yang sangat kelebihan stok.
 - **Ambang Lead Time Tinggi** — bukan filter data, tapi mengubah parameter rumus Priority Level & Rekomendasi (lihat bagian rumus di atas)
 
 ## Edit Data

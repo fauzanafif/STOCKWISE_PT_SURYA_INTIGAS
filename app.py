@@ -334,6 +334,8 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         ]
     lt_min, lt_max = filters["lead_time_range"]
     result = result[(result["Lead Time"] >= lt_min) & (result["Lead Time"] <= lt_max)]
+    sel_min, sel_max = filters["selisih_range"]
+    result = result[(result["Selisih"] >= sel_min) & (result["Selisih"] <= sel_max)]
     return result
 
 
@@ -380,6 +382,17 @@ def render_sidebar(df: pd.DataFrame):
     lt_max = lt_col2.number_input("Sampai", min_value=0, value=lt_max_data, step=1, key="lead_time_filter_max")
     lead_time_range = (lt_min, lt_max)
 
+    # Selisih (Sisa Stok - Safety Stock) bisa negatif, jadi tidak dibatasi
+    # min_value=0 seperti Lead Time.
+    sel_min_data = int(df["Selisih"].min()) if not df.empty else 0
+    sel_max_data = int(df["Selisih"].max()) if not df.empty else 0
+
+    st.sidebar.caption("Range Selisih")
+    sel_col1, sel_col2 = st.sidebar.columns(2)
+    sel_min = sel_col1.number_input("Dari", value=sel_min_data, step=1, key="selisih_filter_min")
+    sel_max = sel_col2.number_input("Sampai", value=sel_max_data, step=1, key="selisih_filter_max")
+    selisih_range = (sel_min, sel_max)
+
     st.sidebar.divider()
     st.sidebar.header("Pengaturan Prioritas")
     if st.session_state.lead_time_threshold is None:
@@ -404,6 +417,7 @@ def render_sidebar(df: pd.DataFrame):
         "kode_search": kode_search,
         "desk_search": desk_search,
         "lead_time_range": lead_time_range,
+        "selisih_range": selisih_range,
     }
 
 
