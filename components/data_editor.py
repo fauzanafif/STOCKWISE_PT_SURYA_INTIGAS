@@ -61,6 +61,7 @@ def build_column_config(df, extra_options=None):
     return config
 
 
+
 def render_data_editor(df, options_df=None, extra_options=None, key="inventory_editor"):
     """Render the editable table and return the edited (possibly reshaped) DataFrame.
 

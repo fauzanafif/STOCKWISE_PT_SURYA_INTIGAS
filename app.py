@@ -40,24 +40,31 @@ def _logo_data_uri() -> str:
 # bytes (the PDF especially — it paginates every row into styled Paragraphs)
 # would happen again on every single rerun. Caching on the export dataframe's
 # content means it's only rebuilt when the data actually changes.
-@st.cache_data(show_spinner="Menyiapkan file export...")
+#
+# show_spinner=False on purpose: this can fire in the background on any edit
+# (even from the Dashboard tab, since tab4's code still runs every rerun), and
+# the spinner is now a big full-screen overlay (see the CSS below) — showing
+# that for a silent background cache rebuild the user never asked for is what
+# was reported as the dashboard "ngebayang" (flashing/ghosting). The overlay
+# is reserved for the one deliberate, user-initiated wait: the upload spinner.
+@st.cache_data(show_spinner=False)
 def _cached_excel_bytes(df: pd.DataFrame) -> bytes:
     return to_export_bytes(df)
 
 
-@st.cache_data(show_spinner="Menyiapkan file export...")
+@st.cache_data(show_spinner=False)
 def _cached_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8-sig")
 
 
-@st.cache_data(show_spinner="Menyiapkan laporan PDF...")
+@st.cache_data(show_spinner=False)
 def _cached_pdf_bytes(df: pd.DataFrame, scope_label: str, file_name: str) -> bytes:
     return build_pdf_bytes(df, scope_label, file_name)
 
 
 # Static content (no arguments) — still worth caching since it's otherwise
 # rebuilt from scratch on every single rerun even though it never changes.
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def _cached_template_bytes() -> bytes:
     return build_template_bytes()
 
