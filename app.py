@@ -131,9 +131,14 @@ st.markdown(
         border-top: 3px solid var(--sw-blue-tint-30);
         border-radius: 14px;
         padding: 14px 16px;
-        transition: border-color 0.15s ease, transform 0.15s ease;
+        box-shadow: 0 1px 2px rgba(20, 50, 140, 0.05), 0 6px 16px rgba(20, 50, 140, 0.04);
+        transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
     }
-    .sw-kpi-card:hover { border-color: var(--sw-blue-tint-30); transform: translateY(-1px); }
+    .sw-kpi-card:hover {
+        border-color: var(--sw-blue-tint-30);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(20, 50, 140, 0.10), 0 10px 24px rgba(20, 50, 140, 0.08);
+    }
     .sw-kpi-icon {
         flex-shrink: 0;
         width: 42px; height: 42px;
@@ -166,18 +171,46 @@ st.markdown(
         border-radius: 10px;
         margin-bottom: 8px;
         border: 1px solid var(--sw-blue-tint-20);
+        box-shadow: 0 1px 2px rgba(20, 50, 140, 0.04);
         font-size: 0.92rem;
         line-height: 1.4;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .sw-insight:hover {
+        transform: translateX(2px);
+        box-shadow: 0 3px 10px rgba(20, 50, 140, 0.08);
     }
 
     /* ---- Tabs ---- */
-    button[data-baseweb="tab"] { font-size: 0.98rem; font-weight: 600; padding: 8px 4px; }
+    div[data-baseweb="tab-list"] { gap: 4px; }
+    button[data-baseweb="tab"] {
+        font-size: 0.98rem; font-weight: 600; padding: 8px 14px;
+        border-radius: 8px 8px 0 0; transition: background 0.15s ease, color 0.15s ease;
+    }
+    button[data-baseweb="tab"]:hover { background: var(--sw-blue-tint-06); }
     button[data-baseweb="tab"][aria-selected="true"] { color: var(--sw-blue-dark); }
+    div[data-baseweb="tab-highlight"] { background-color: var(--sw-blue); height: 3px; border-radius: 3px; }
     div[data-testid="stMetric"] {
         background: var(--sw-blue-tint-06);
         border: 1px solid var(--sw-blue-tint-20);
         border-radius: 10px;
         padding: 12px 16px;
+    }
+
+    /* ---- Chart & table cards ---- */
+    /* This app only ever uses st.container(border=True) around a chart or the
+       Procurement table, so it's safe to style every bordered container the
+       same way — the dashboard reads as a grid of widgets instead of plots
+       floating loose on the page. */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        border-radius: 14px !important;
+        border-color: var(--sw-blue-tint-20) !important;
+        background: #ffffffa8;
+        box-shadow: 0 1px 2px rgba(20, 50, 140, 0.05), 0 8px 20px rgba(20, 50, 140, 0.05);
+        transition: box-shadow 0.15s ease;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        box-shadow: 0 4px 12px rgba(20, 50, 140, 0.10), 0 12px 28px rgba(20, 50, 140, 0.08);
     }
 
     /* ---- Welcome / empty state ---- */
@@ -187,9 +220,14 @@ st.markdown(
         border-radius: 12px;
         padding: 14px 16px;
         height: 100%;
-        transition: border-color 0.15s ease;
+        box-shadow: 0 1px 2px rgba(20, 50, 140, 0.04);
+        transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
     }
-    .sw-welcome-feature:hover { border-color: var(--sw-blue-tint-30); }
+    .sw-welcome-feature:hover {
+        border-color: var(--sw-blue-tint-30);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(20, 50, 140, 0.08);
+    }
     .sw-welcome-feature .emoji { font-size: 1.4rem; }
     .sw-welcome-feature b { display: block; margin: 6px 0 2px 0; font-size: 0.95rem; color: var(--sw-blue-dark); }
     .sw-welcome-feature p { margin: 0; font-size: 0.82rem; color: #5b6b8c; line-height: 1.4; }
@@ -484,6 +522,19 @@ def render_chart_header(title: str, caption: str = ""):
         st.markdown(f'<div class="sw-chart-caption">{caption}</div>', unsafe_allow_html=True)
 
 
+def render_chart(title: str, caption: str, fig, empty_message: str = None):
+    """Render one chart inside a bordered card (see the
+    `stVerticalBlockBorderWrapper` CSS rule) so the dashboard reads as a grid
+    of widgets rather than plots floating loose on the page.
+    """
+    with st.container(border=True):
+        render_chart_header(title, caption)
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+        elif empty_message:
+            st.success(empty_message)
+
+
 def render_welcome():
     st.markdown(
         """
@@ -631,43 +682,46 @@ def main():
         render_section_header("🔎 Kondisi Inventory Saat Ini", "Apa yang aman, apa yang tidak, dan seberapa parah.")
         c1, c2 = st.columns([1, 2])
         with c1:
-            render_chart_header("Status Inventory", "Proporsi barang AMAN vs TIDAK AMAN.")
-            fig = status_donut(filtered_final)
-            st.plotly_chart(fig, use_container_width=True)
+            render_chart("Status Inventory", "Proporsi barang AMAN vs TIDAK AMAN.", status_donut(filtered_final))
         with c2:
-            render_chart_header("Top Barang dengan Defisit Terbesar", "Barang paling kurang dari safety stock-nya.")
-            fig = top_deficit_bar(filtered_final)
-            if fig is not None:
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.success("✅ Tidak ada barang dengan defisit stok.")
+            render_chart(
+                "Top Barang dengan Defisit Terbesar",
+                "Barang paling kurang dari safety stock-nya.",
+                top_deficit_bar(filtered_final),
+                empty_message="✅ Tidak ada barang dengan defisit stok.",
+            )
 
-        render_chart_header("Stok vs Safety Stock", "Perbandingan langsung: stok saat ini vs batas amannya.")
-        fig = stock_vs_safety_bar(filtered_final)
-        if fig is not None:
-            st.plotly_chart(fig, use_container_width=True)
+        render_chart(
+            "Stok vs Safety Stock",
+            "Perbandingan langsung: stok saat ini vs batas amannya.",
+            stock_vs_safety_bar(filtered_final),
+        )
 
         st.divider()
         render_section_header("📍 Analisis per Lokasi & Kategori", "Di gudang atau kategori mana masalah paling banyak.")
         c3, c4 = st.columns(2)
         with c3:
-            render_chart_header("Inventory per Gudang — Status", "Jumlah barang aman/tidak aman di tiap gudang.")
-            fig = warehouse_status_bar(filtered_final)
-            if fig is not None:
-                st.plotly_chart(fig, use_container_width=True)
-            render_chart_header("Inventory per Gudang — Stok vs Safety Stock", "Total stok vs total safety stock per gudang.")
-            fig = warehouse_stock_bar(filtered_final)
-            if fig is not None:
-                st.plotly_chart(fig, use_container_width=True)
+            render_chart(
+                "Inventory per Gudang — Status",
+                "Jumlah barang aman/tidak aman di tiap gudang.",
+                warehouse_status_bar(filtered_final),
+            )
+            render_chart(
+                "Inventory per Gudang — Stok vs Safety Stock",
+                "Total stok vs total safety stock per gudang.",
+                warehouse_stock_bar(filtered_final),
+            )
         with c4:
-            render_chart_header("Inventory per Kategori Induk", "Jumlah barang aman/tidak aman per kategori.")
-            fig = category_status_bar(filtered_final)
-            if fig is not None:
-                st.plotly_chart(fig, use_container_width=True)
-            render_chart_header("Lead Time vs Defisit", "Barang lead time tinggi + defisit besar = prioritas procurement.")
-            fig = lead_time_scatter(filtered_final)
-            if fig is not None:
-                st.plotly_chart(fig, use_container_width=True)
+            render_chart(
+                "Inventory per Kategori Induk",
+                "Jumlah barang aman/tidak aman per kategori.",
+                category_status_bar(filtered_final),
+            )
+            render_chart(
+                "Lead Time vs Defisit",
+                "Barang lead time tinggi + defisit besar = prioritas procurement.",
+                lead_time_scatter(filtered_final),
+            )
 
         st.divider()
         render_section_header("💡 Inventory Insight", "Ringkasan singkat dari data yang lagi ditampilkan.")
@@ -706,10 +760,20 @@ def main():
             cols = [c for c in cols if c in unsafe.columns]
 
             priority_colors = {"HIGH": COLOR_TIDAK_AMAN, "MEDIUM": COLOR_WARNING, "LOW": COLOR_AMAN}
+            priority_row_tint = {"HIGH": f"{COLOR_TIDAK_AMAN}12", "MEDIUM": f"{COLOR_WARNING}0f"}
 
             def _style_priority(val):
                 color = priority_colors.get(val)
                 return f"background-color:{color}26; color:{color}; font-weight:700;" if color else ""
+
+            def _tint_row(row):
+                # Light background wash across the whole row so the most urgent
+                # items are easy to spot at a glance, not just the Priority
+                # Level cell — the cell itself still gets the stronger, bolded
+                # color from _style_priority (applied after, so it wins there).
+                bg = priority_row_tint.get(row.get("Priority Level"), "")
+                style = f"background-color:{bg};" if bg else ""
+                return [style] * len(row)
 
             # Without an explicit format, pandas Styler prints floats at full
             # precision (e.g. "50.000000" instead of "50") — these columns are
@@ -718,9 +782,11 @@ def main():
             styled = (
                 unsafe[cols]
                 .style.format({c: "{:,.0f}" for c in number_cols})
+                .apply(_tint_row, axis=1)
                 .map(_style_priority, subset=["Priority Level"])
             )
-            st.dataframe(styled, use_container_width=True, hide_index=True)
+            with st.container(border=True):
+                st.dataframe(styled, use_container_width=True, hide_index=True)
 
     with tab4:
         render_section_header(
@@ -732,8 +798,15 @@ def main():
         export_df = full_df if export_scope == "Seluruh Data" else filtered_final
         st.caption(f"Akan mengekspor **{len(export_df):,}** baris.")
 
+        st.write("")
         col1, col2, col3 = st.columns(3)
-        with col1:
+        with col1, st.container(border=True):
+            st.markdown(
+                '<div class="sw-welcome-feature" style="border:none;box-shadow:none;padding:0;">'
+                '<span class="emoji">📊</span><b>Excel</b>'
+                '<p>Data lengkap semua kolom — buat diedit atau diolah lagi.</p></div>',
+                unsafe_allow_html=True,
+            )
             st.download_button(
                 "⬇️ Download Excel",
                 data=_cached_excel_bytes(export_df),
@@ -741,16 +814,27 @@ def main():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
-        with col2:
+        with col2, st.container(border=True):
+            st.markdown(
+                '<div class="sw-welcome-feature" style="border:none;box-shadow:none;padding:0;">'
+                '<span class="emoji">🖨️</span><b>PDF</b>'
+                '<p>Laporan siap cetak — ringkasan KPI, daftar barang, Procurement Priority.</p></div>',
+                unsafe_allow_html=True,
+            )
             st.download_button(
                 "⬇️ Download PDF",
                 data=_cached_pdf_bytes(export_df, export_scope, st.session_state.file_name or ""),
                 file_name="stockwise_laporan.pdf",
                 mime="application/pdf",
                 use_container_width=True,
-                help="Laporan cetak: ringkasan KPI, daftar barang, dan Procurement Priority.",
             )
-        with col3:
+        with col3, st.container(border=True):
+            st.markdown(
+                '<div class="sw-welcome-feature" style="border:none;box-shadow:none;padding:0;">'
+                '<span class="emoji">📄</span><b>CSV</b>'
+                '<p>Format ringan buat diimpor ke sistem atau tool lain.</p></div>',
+                unsafe_allow_html=True,
+            )
             st.download_button(
                 "⬇️ Download CSV",
                 data=_cached_csv_bytes(export_df),
