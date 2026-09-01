@@ -329,6 +329,7 @@ def init_state():
         ("lead_time_threshold", None),
         ("debug_info", None),
         ("dropdown_options", {}),
+        ("hidden_columns", []),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -450,6 +451,13 @@ def render_sidebar(df: pd.DataFrame):
         help="Barang TIDAK AMAN dengan Lead Time >= nilai ini dianggap prioritas tinggi.",
     )
 
+    any_active = bool(
+        kategori_induk or kategori_anak1 or kategori_anak2 or kategori_anak3 or uom
+        or gudang or status or perlu_blueprint or kode_search or desk_search
+        or lead_time_range != (lt_min_data, lt_max_data)
+        or selisih_range != (sel_min_data, sel_max_data)
+    )
+
     return {
         "kategori_induk": kategori_induk,
         "kategori_anak1": kategori_anak1,
@@ -463,6 +471,7 @@ def render_sidebar(df: pd.DataFrame):
         "desk_search": desk_search,
         "lead_time_range": lead_time_range,
         "selisih_range": selisih_range,
+        "any_active": any_active,
     }
 
 
@@ -627,6 +636,12 @@ def main():
             st.session_state.file_signature = signature
             st.session_state.file_name = uploaded.name
             st.session_state.dropdown_options = load_dropdown_options(uploaded)
+            # A new file may not have the same columns as the last one — reset
+            # column visibility so a stale hidden-column name can't crash the
+            # "Kelola Kolom" multiselect (it errors if its value contains an
+            # option that no longer exists).
+            st.session_state.hidden_columns = []
+            st.session_state.pop("hidden_columns_picker", None)
             st.toast(f"Berhasil memuat {len(df):,} barang dari '{uploaded.name}'.", icon="✅")
 
     if st.session_state.df is None:
@@ -648,10 +663,30 @@ def main():
             "Edit langsung di tabel — Selisih, Status, Defisit, Priority, dan Rekomendasi ikut kehitung ulang.",
         )
         n_tidak_aman = int((filtered_view["Status"] == STATUS_TIDAK_AMAN).sum())
-        st.caption(
-            f"Nampilin **{len(filtered_view):,}** dari **{len(full_df):,}** barang sesuai filter "
-            f"— **{n_tidak_aman:,}** di antaranya TIDAK AMAN."
-        )
+        col_caption, col_menu = st.columns([6, 1])
+        with col_caption:
+            st.caption(
+                f"Nampilin **{len(filtered_view):,}** dari **{len(full_df):,}** barang sesuai filter "
+                f"— **{n_tidak_aman:,}** di antaranya TIDAK AMAN."
+            )
+        with col_menu:
+            with st.popover("⋮", use_container_width=True, help="Kelola kolom — sembunyikan/hapus dari tampilan & download"):
+                st.markdown("**Kelola Kolom**")
+                st.caption(
+                    "Kolom yang disembunyikan juga ikut hilang dari download Excel & CSV "
+                    "(laporan PDF tetap menampilkan semua kolom yang dibutuhkan ringkasannya)."
+                )
+                hidden_selection = st.multiselect(
+                    "Sembunyikan kolom",
+                    options=list(filtered_view.columns),
+                    default=[c for c in st.session_state.hidden_columns if c in filtered_view.columns],
+                    key="hidden_columns_picker",
+                )
+                st.session_state.hidden_columns = hidden_selection
+                if hidden_selection and st.button("↺ Tampilkan semua kolom", use_container_width=True):
+                    st.session_state.hidden_columns = []
+                    st.rerun()
+
         debug_info = st.session_state.debug_info
         if debug_info:
             with st.expander("🐞 Debug Excel"):
@@ -661,9 +696,12 @@ def main():
                 st.write("Kolom terdeteksi:", debug_info.get("columns"))
                 st.write("Pilihan dropdown dari sheet 'Dropdown List':", st.session_state.dropdown_options or "(tidak ditemukan)")
 
-        editor_key = f"inventory_editor::{filter_signature(filters)}"
+        visible_cols = [c for c in filtered_view.columns if c not in st.session_state.hidden_columns]
+        editor_key = (
+            f"inventory_editor::{filter_signature(filters)}::hide={','.join(sorted(st.session_state.hidden_columns))}"
+        )
         edited_view = render_data_editor(
-            filtered_view,
+            filtered_view[visible_cols],
             options_df=full_df,
             extra_options=st.session_state.dropdown_options,
             key=editor_key,
@@ -794,9 +832,29 @@ def main():
             "Hasil export sudah mencakup Selisih, Status, Defisit, Priority Score/Level, dan Rekomendasi.",
         )
 
-        export_scope = st.radio("Data yang diexport", ["Seluruh Data", "Data Terfilter"], horizontal=True)
-        export_df = full_df if export_scope == "Seluruh Data" else filtered_final
-        st.caption(f"Akan mengekspor **{len(export_df):,}** baris.")
+        scope_options = ["Seluruh Data", "Data Terfilter"]
+        default_scope_idx = 1 if filters.get("any_active") else 0
+        export_scope = st.radio("Data yang diexport", scope_options, index=default_scope_idx, horizontal=True)
+        # Row-filtered dataset — this is what the PDF report uses. Its KPI
+        # summary reads core columns (Status, Sisa Stok, Safety Stock, Defisit,
+        # Priority Score) directly, so it always gets every column intact even
+        # when some are hidden from the editor/Excel/CSV below.
+        export_rows_df = full_df if export_scope == "Seluruh Data" else filtered_final
+
+        # Excel/CSV mirror whatever the user is actually looking at, so hidden
+        # columns are dropped from those two (but not the PDF — see above).
+        export_df = export_rows_df
+        if st.session_state.hidden_columns:
+            visible_export_cols = [c for c in export_df.columns if c not in st.session_state.hidden_columns]
+            export_df = export_df[visible_export_cols]
+
+        scope_caption = f"Akan mengekspor **{len(export_df):,}** baris"
+        if st.session_state.hidden_columns:
+            scope_caption += (
+                f", **{len(st.session_state.hidden_columns)}** kolom disembunyikan dari Excel/CSV "
+                "(laporan PDF tetap lengkap)"
+            )
+        st.caption(scope_caption + ".")
 
         st.write("")
         col1, col2, col3 = st.columns(3)
@@ -823,7 +881,7 @@ def main():
             )
             st.download_button(
                 "⬇️ Download PDF",
-                data=_cached_pdf_bytes(export_df, export_scope, st.session_state.file_name or ""),
+                data=_cached_pdf_bytes(export_rows_df, export_scope, st.session_state.file_name or ""),
                 file_name="stockwise_laporan.pdf",
                 mime="application/pdf",
                 use_container_width=True,
