@@ -1,5 +1,18 @@
 # STOCKWISE
 
+> **Dua aplikasi dalam repo ini:**
+>
+> | | Entry point | Data | Untuk |
+> |---|---|---|---|
+> | **v1 — Dashboard Master (legacy)** | `streamlit run app.py` | 1 file Excel master, di memori | Pantau stok cepat dari satu file, tanpa setup |
+> | **v2 — Inventory Intelligence System** | `streamlit run Home.py` | 9 workbook → `stockwise.db` | Procurement flow, usage analysis, tracking, matching, lineage |
+>
+> v1 tidak diubah. v2 dibangun berdampingan. Detail v2: [`AUDIT/`](AUDIT/) (audit sumber, keputusan/asumsi, data dictionary, ERD, laporan ingest) dan bagian [STOCKWISE v2](#stockwise-v2) di bawah.
+
+---
+
+## v1 — Dashboard Master (legacy)
+
 Dashboard inventory berbasis **Python + Streamlit + Pandas + Plotly**. Upload file Excel inventory, edit datanya langsung di tabel interaktif, dan lihat KPI, chart, insight, serta rekomendasi procurement ter-update otomatis — tanpa refresh halaman, tanpa database, tanpa login. File Excel yang diupload adalah satu-satunya sumber data; semua kalkulasi jalan ulang di memori setiap kali ada perubahan.
 
 ## Daftar Isi
@@ -241,3 +254,71 @@ Excel dan CSV selalu menyertakan `Selisih`, `Status`, `Defisit`, `Priority Score
 5. Dataset yang sudah dihitung ulang disimpan kembali ke `session_state`, lalu difilter ulang sesuai sidebar sebelum dipakai oleh KPI, chart, insight, dan tab Procurement.
 
 Karena semua tab dan komponen membaca dari dataframe yang sama (yang baru saja dihitung ulang di run yang sama), KPI, chart, dan insight selalu konsisten satu sama lain — tanpa perlu tombol refresh manual.
+
+---
+
+## STOCKWISE v2
+
+Inventory Intelligence System: baca 9 workbook operasional → satu database normalized (`stockwise.db`) →
+calculation engine → dashboard multi-halaman yang bisa menjawab pertanyaan manajemen dan menelusuri
+tiap angka kembali ke baris Excel.
+
+### Arsitektur
+
+```
+DATAFIX/*.xlsx  ──upload per modul──>  ingest (parser + matching + UPSERT)  ──>  stockwise.db
+                                                                                     │
+                                                              calc engine (stockwise/calc.py)
+                                                                                     │
+                                                     Streamlit multipage (Home.py + pages/)
+```
+
+`stockwise.db` (SQLite, satu file, di-`.gitignore`) = **single source of truth**. Excel = import layer.
+Semua halaman baca dari DB, tidak pernah parsing Excel saat render.
+
+### Menjalankan
+
+```bash
+pip install -r requirements.txt          # streamlit, pandas, plotly, dll (sama seperti v1)
+cd tools && npm install && cd ..          # sekali — untuk ETL (butuh Node.js 22+)
+
+# isi database dari folder DATAFIX/ (bootstrap):
+node --experimental-sqlite tools/build_stockwise_db.mjs
+#   -> stockwise.db + AUDIT/03_ingest_report.md
+
+streamlit run Home.py                     # buka dashboard v2
+```
+
+Upload harian lewat UI (**Data Management → Upload Center**) memanggil `tools/ingest_one.mjs` per file —
+kode yang sama, UPSERT by `row_hash`, jadi upload file kumulatif berulang tidak menggandakan data.
+
+### Kenapa ada Node di project Python
+
+ETL (baca Excel, normalisasi, matching, dedup) ditulis di Node karena bisa dites langsung terhadap
+data asli di environment ini; `stockwise.db` yang dihasilkan portabel dan dibaca oleh Python.
+Logika normalisasi & kalkulasi dicerminkan di `stockwise/textnorm.py` & `stockwise/calc.py`
+(harus tetap sinkron dengan `tools/lib/textnorm.mjs` & `tools/lib/calc.mjs`).
+
+### Halaman
+
+| Halaman | Isi |
+|---|---|
+| Home (Executive) | KPI stok/risiko/procurement, 10 item paling mendesak |
+| Inventory | daftar barang + status + filter; klik baris → Item Detail |
+| Procurement | priority buy list, status PPB→PO→RI, outstanding |
+| Usage Analysis | konsumsi NPBG: trend bulanan, top item, per divisi/klasifikasi/pelanggan |
+| Tracking | Borrow/Lend, STPP, Ban, Maintenance Kendaraan, Manufaktur, Pengembalian Bekas |
+| Master Data | katalog barang, safety-stock params, alias |
+| Item Detail | 360°: stok, procurement, usage, tracking, blueprint, lineage ke baris Excel |
+| Data Management | Upload Center, riwayat proses, data quality |
+| Matching Review | terima/tolak match barang transaksi ↔ master (fuzzy tidak pernah otomatis) |
+| Ask STOCKWISE | jawaban cepat untuk pertanyaan manajemen yang sering muncul |
+
+### Status & batasan (per bootstrap pertama)
+
+- **Safety Stock** hanya tersedia untuk ~8.600 item (sumber: 13 sheet `SAFETY STOCK *`), dan **6.211
+  di antaranya nilainya berbeda antar-sheet** (`dq_flag=SS_CONFLICT`) — perlu review bisnis.
+  Item tanpa SS tidak diperlakukan sebagai `0`, statusnya `NO_SAFETY_STOCK`.
+- **Sisa Stok** kosong untuk ~71% item di master → status `UNKNOWN`, tidak dihitung sebagai stok 0.
+- Matching barang transaksi ↔ master ~55–58% otomatis (exact/normalized). Sisanya masuk **Matching Review**.
+- Asumsi kerja atas semua konflik data: [`AUDIT/00_decisions.md`](AUDIT/00_decisions.md).

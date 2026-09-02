@@ -61,6 +61,8 @@ try {
   if (named !== file && !fs.existsSync(named)) { fs.copyFileSync(file, named); target = named; }
 
   const before = tableCounts(db);
+  const maxBatchBefore = db.prepare(`SELECT COALESCE(MAX(id),0) m FROM upload_batches`).get().m;
+
   HANDLERS[module](db, target);
   const match = runMatching(db, { onlyPending: true });
   runDerived(db);
@@ -71,18 +73,15 @@ try {
 
   const delta = {};
   for (const k of Object.keys(after)) if (after[k] !== (before[k] || 0)) delta[k] = after[k] - (before[k] || 0);
-  const batches = db.prepare(
-    `SELECT module, total_rows, inserted, duplicate, need_review FROM upload_batches
-     WHERE id > (SELECT COALESCE(MAX(id),0) FROM upload_batches) - ? ORDER BY id`,
-  ).all(20);
-  const lastBatches = db.prepare(
-    `SELECT module, total_rows total, inserted, duplicate, need_review FROM upload_batches ORDER BY id DESC LIMIT ?`,
-  ).all(module === 'master' ? 2 : 4);
 
-  const totalInserted = lastBatches.reduce((a, b) => a + (b.inserted || 0), 0);
-  const totalDup = lastBatches.reduce((a, b) => a + (b.duplicate || 0), 0);
-  const totalRows = lastBatches.reduce((a, b) => a + (b.total || 0), 0);
+  const myBatches = db.prepare(
+    `SELECT module, total_rows total, inserted, duplicate, need_review FROM upload_batches WHERE id > ? ORDER BY id`,
+  ).all(maxBatchBefore);
+  const totalInserted = myBatches.reduce((a, b) => a + (b.inserted || 0), 0);
+  const totalDup = myBatches.reduce((a, b) => a + (b.duplicate || 0), 0);
+  const totalRows = myBatches.reduce((a, b) => a + (b.total || 0), 0);
   const matchedNew = Object.values(match).reduce((a, s) => a + (s.MATCHED || 0), 0);
+  const lastBatches = myBatches;
   const needReview = db.prepare(
     `SELECT COUNT(DISTINCT source_table||source_row_id) c FROM matching_reviews WHERE decision='PENDING'`,
   ).get().c;

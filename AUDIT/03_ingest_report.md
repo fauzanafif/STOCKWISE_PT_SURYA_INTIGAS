@@ -1,4 +1,4 @@
-# STOCKWISE — Laporan Ingest (2026-09-02 02:41)
+# STOCKWISE — Laporan Ingest (2026-09-02 02:46)
 
 Dibuat oleh `tools/build_stockwise_db.mjs` dari `DATAFIX/`. Sumber kebenaran = Excel; `stockwise.db` = layer normalized.
 
@@ -25,7 +25,7 @@ Dibuat oleh `tools/build_stockwise_db.mjs` dari `DATAFIX/`. Sumber kebenaran = E
 | manufacturing | 750 |
 | used_returns | 489 |
 | vehicles | 60 |
-| matching_reviews | 13.983 |
+| matching_reviews | 4.354 |
 | calc_results | 8.964 |
 
 ## Batch upload
@@ -65,7 +65,7 @@ Dibuat oleh `tools/build_stockwise_db.mjs` dari `DATAFIX/`. Sumber kebenaran = E
 | manufacturing | 322 | 22 | 20 | 386 | 43% |
 | used_returns | 246 | 42 | 49 | 51 | 63% |
 
-Antrian review (`matching_reviews.decision = 'PENDING'`): **12.187** baris transaksi menunggu keputusan manual. Fuzzy tidak pernah auto-match (RULE 8).
+Antrian review (`matching_reviews.decision = 'PENDING'`): **2.558** baris transaksi menunggu keputusan manual. Fuzzy tidak pernah auto-match (RULE 8).
 
 ## Kondisi stok (calc run #1, threshold lead time = 14 hari [A-5])
 
