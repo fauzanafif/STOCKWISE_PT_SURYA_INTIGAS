@@ -1,0 +1,12 @@
+{
+  "name": "stockwise-tools",
+  "private": true,
+  "type": "module",
+  "description": "Bootstrap/verification ETL for STOCKWISE — builds stockwise.db from DATAFIX/*.xlsx",
+  "scripts": {
+    "build-db": "node --experimental-sqlite build_stockwise_db.mjs"
+  },
+  "dependencies": {
+    "xlsx": "0.18.5"
+  }
+}
