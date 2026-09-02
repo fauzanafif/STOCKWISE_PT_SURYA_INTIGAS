@@ -52,8 +52,10 @@ def executive_kpis() -> dict:
            WHERE p.total_qty > (SELECT COALESCE(SUM(qty),0) FROM ri_lines r WHERE r.no_po = p.no_po)"""
     ) or 0
     row["ri_30d"] = scalar("SELECT COUNT(DISTINCT no_ri) FROM ri_lines WHERE tgl_ri >= date('now','-30 day')") or 0
-    ss = row["ss_known"] or 0
-    row["stock_health"] = round(100 * (row["aman"] or 0) / ss, 1) if ss else None
+    # Health = AMAN / (item yang bisa dinilai: stok & SS sama-sama diketahui).
+    assessable = (row["aman"] or 0) + (row["tidak_aman"] or 0) + (row["out_of_stock"] or 0)
+    row["assessable"] = assessable
+    row["stock_health"] = round(100 * (row["aman"] or 0) / assessable, 1) if assessable else None
     return row
 
 
@@ -61,20 +63,21 @@ def executive_kpis() -> dict:
 def inventory_table(status: list[str] | None = None, kategori: list[str] | None = None,
                     gudang: list[str] | None = None, search: str | None = None,
                     only_critical: bool = False) -> pd.DataFrame:
-    where, params = ["1=1"], {}
+    where: list[str] = ["1=1"]
+    params_list: list = []
+
+    def in_clause(col: str, values: list[str]):
+        where.append(f"{col} IN ({','.join('?' for _ in values)})")
+        params_list.extend(values)
+
     if status:
-        where.append(f"stock_status IN ({','.join('?' * len(status))})")
-        params_list = list(status)
-    else:
-        params_list = []
+        in_clause("stock_status", list(status))
     if only_critical:
         where.append("is_critical = 1")
     if kategori:
-        where.append(f"kategori_induk IN ({','.join('?' * len(kategori))})")
-        params_list += list(kategori)
+        in_clause("kategori_induk", list(kategori))
     if gudang:
-        where.append(f"letak_gudang IN ({','.join('?' * len(gudang))})")
-        params_list += list(gudang)
+        in_clause("letak_gudang", list(gudang))
     if search:
         where.append("(deskripsi LIKE ? OR kode_barang LIKE ?)")
         params_list += [f"%{search}%", f"%{search}%"]

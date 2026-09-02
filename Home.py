@@ -35,7 +35,7 @@ kpi_grid([
     ("Total Defisit", fmt_num(k["total_defisit"]), "kekurangan vs safety stock", STATUS_COLORS["TIDAK_AMAN"]),
     ("Incoming (PPB)", fmt_num(k["incoming"]), "sudah dipesan, belum diterima", "#c98500"),
     ("Skor Kesehatan", f"{health}%" if health is not None else "—",
-     f"AMAN / {fmt_num(k['ss_known'])} item ber-SS", STATUS_COLORS["AMAN"]),
+     f"AMAN / {fmt_num(k['assessable'])} item yang bisa dinilai", STATUS_COLORS["AMAN"]),
 ])
 
 if (k["ss_known"] or 0) < (k["total_item"] or 1) * 0.5:

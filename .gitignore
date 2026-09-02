@@ -29,6 +29,15 @@ dist/
 data/*
 !data/.gitkeep
 
+# --- STOCKWISE data layer (rebuilt from DATAFIX/ or via upload) ---
+stockwise.db
+stockwise.db-wal
+stockwise.db-shm
+
+# --- Node tooling (bootstrap ETL in tools/) ---
+node_modules/
+tools/build.log
+
 # --- Logs ---
 *.log
 

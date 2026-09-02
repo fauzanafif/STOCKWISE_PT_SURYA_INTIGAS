@@ -51,7 +51,9 @@ function norm(v) {
 }
 
 export function newBatch(db, { filename, module, source_mtime, notes = null }) {
-  const batch_uid = `${module}:${filename}:${source_mtime || ''}`;
+  // one row per processing event — re-uploading the same file monthly is expected;
+  // row-level dedup happens via row_hash, not here.
+  const batch_uid = `${module}:${filename}:${source_mtime || ''}:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`;
   const id = insert(db, 'upload_batches', { batch_uid, filename, module, source_mtime, notes });
   return id;
 }

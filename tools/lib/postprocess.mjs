@@ -37,8 +37,10 @@ export function runMatching(db, { onlyPending = false } = {}) {
       upd.run(res.master_item_id, res.status, row.id);
       s[res.status] = (s[res.status] || 0) + 1;
       if (res.status !== 'MATCHED') {
-        for (const c of res.candidates.slice(0, 5)) rev.run(table, row.id, row.d, null, c.id, c.desc, c.confidence, c.method);
-        if (!res.candidates.length) rev.run(table, row.id, row.d, null, null, null, 0, res.method || 'NONE');
+        // only rows with real candidates go to the review queue; a NEW_ITEM with
+        // no candidate is already flagged via the row's match_status.
+        for (const c of res.candidates.slice(0, 5))
+          if (c.id) rev.run(table, row.id, row.d, null, c.id, c.desc, c.confidence, c.method);
       }
     }
     db.exec('COMMIT');

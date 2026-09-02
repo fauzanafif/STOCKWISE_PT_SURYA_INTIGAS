@@ -49,79 +49,9 @@ step('maintenance', () => (summary.maint = ingestMaintenance(db, F('6. Tracking 
 step('manufacturing', () => (summary.mfg = ingestManufacturing(db, F('7. Tracking Manufaktur & Assembly.xlsx'))));
 step('used returns', () => (summary.ur = ingestUsedReturns(db, F('8. Tracking Pengembalian Bekas.xlsx'))));
 
-// ── matching ──
-step('matching', () => {
-  const masters = db.prepare(`SELECT id, kode_barang, deskripsi, deskripsi_norm, deskripsi_core FROM master_items`).all();
-  const idx = buildMasterIndex(masters);
-  const cache = new Map();
-  const doResolve = (desc) => {
-    if (cache.has(desc)) return cache.get(desc);
-    const r = resolve(idx, desc);
-    cache.set(desc, r);
-    return r;
-  };
-  const targets = [
-    ['ppb_lines', 'deskripsi'], ['ppb_changes', 'deskripsi'], ['ri_lines', 'deskripsi'],
-    ['npbg_lines', 'deskripsi'], ['borrow_lend', 'deskripsi'], ['stpp', 'deskripsi'],
-    ['tire_transactions', 'deskripsi_ban_baru'], ['manufacturing', 'hasil_produk'],
-    ['used_returns', 'deskripsi'],
-  ];
-  const stats = {};
-  for (const [table, col] of targets) {
-    const rows = db.prepare(`SELECT id, ${col} AS d FROM ${table} WHERE ${col} IS NOT NULL`).all();
-    const upd = db.prepare(`UPDATE ${table} SET master_item_id = ?, match_status = ? WHERE id = ?`);
-    const rev = db.prepare(`INSERT OR IGNORE INTO matching_reviews
-      (source_table, source_row_id, source_desc, source_desc_norm, candidate_item_id, candidate_desc, confidence, method, decision)
-      VALUES (?,?,?,?,?,?,?,?, 'PENDING')`);
-    const s = { MATCHED: 0, POSSIBLE_MATCH: 0, NEED_REVIEW: 0, NEW_ITEM: 0 };
-    db.exec('BEGIN');
-    for (const row of rows) {
-      const res = doResolve(row.d);
-      upd.run(res.master_item_id, res.status, row.id);
-      s[res.status] = (s[res.status] || 0) + 1;
-      if (res.status !== 'MATCHED') {
-        for (const c of res.candidates.slice(0, 5)) {
-          rev.run(table, row.id, row.d, null, c.id, c.desc, c.confidence, c.method);
-        }
-        if (!res.candidates.length) rev.run(table, row.id, row.d, null, null, null, 0, res.method || 'NONE');
-      }
-    }
-    db.exec('COMMIT');
-    stats[table] = s;
-  }
-  summary.matching = stats;
-});
-
-// ── derived: po_derived, vehicles ──
-step('derived', () => {
-  db.exec(`
-    INSERT INTO po_derived (no_po, vendor, first_ri_date, last_ri_date, ri_count, total_qty)
-    SELECT no_po, MAX(vendor), MIN(tgl_ri), MAX(tgl_ri), COUNT(*), SUM(COALESCE(qty,0))
-    FROM ri_lines WHERE no_po IS NOT NULL GROUP BY no_po;
-  `);
-  const vset = new Map();
-  for (const [tbl, col, dcol] of [
-    ['tire_transactions', 'nopol', 'tgl_npbg'], ['tire_bpn_snapshots', 'nopol', 'tanggal_cut_off'],
-    ['tire_deliver_receive', 'nopol', 'tgl_npbg'], ['asset_maintenance', 'nopol', 'tgl_laporan'],
-    ['npbg_lines', 'no_seri_nopol', 'tgl_npbg'],
-  ]) {
-    for (const r of db.prepare(`SELECT ${col} AS n, ${dcol} AS d FROM ${tbl} WHERE ${col} IS NOT NULL`).all()) {
-      const n = String(r.n).trim();
-      if (!/\b[A-Z]{1,2}\s?\d{2,4}\b/i.test(n)) continue; // looks like a plate
-      const cur = vset.get(n) || { first: r.d, last: r.d };
-      if (r.d && (!cur.first || r.d < cur.first)) cur.first = r.d;
-      if (r.d && (!cur.last || r.d > cur.last)) cur.last = r.d;
-      vset.set(n, cur);
-    }
-  }
-  const vi = db.prepare(`INSERT OR IGNORE INTO vehicles (nopol, first_seen, last_seen) VALUES (?,?,?)`);
-  db.exec('BEGIN');
-  for (const [n, v] of vset) vi.run(n, v.first || null, v.last || null);
-  db.exec('COMMIT');
-  summary.vehicles = vset.size;
-});
-
-step('calc', () => (summary.calc = runCalc(db)));
+step('matching', () => { summary.matching = runMatching(db); });
+step('derived', () => { summary.derived = runDerived(db); });
+step('calc', () => { summary.calc = runCalc(db); });
 
 writeReport();
 db.close();
@@ -145,7 +75,7 @@ function writeReport() {
   p(`Dibuat oleh \`tools/build_stockwise_db.mjs\` dari \`DATAFIX/\`. Sumber kebenaran = Excel; \`stockwise.db\` = layer normalized.`);
   p();
 
-  p(`## Ringkасан tabel`);
+  p(`## Ringkasan tabel`);
   p();
   p(`| Tabel | Baris |`);
   p(`|---|--:|`);
@@ -189,9 +119,11 @@ function writeReport() {
   const crit = count(`SELECT COUNT(*) c FROM v_inventory WHERE is_critical = 1`);
   const ssKnown = count(`SELECT COUNT(*) c FROM v_inventory WHERE safety_stock_known = 1`);
   const aman = count(`SELECT COUNT(*) c FROM v_inventory WHERE stock_status = 'AMAN'`);
+  const assessable = count(`SELECT COUNT(*) c FROM v_inventory WHERE stock_status IN ('AMAN','TIDAK_AMAN','OUT_OF_STOCK')`);
   p(`- Item CRITICAL: **${crit}**`);
   p(`- Item dengan Safety Stock diketahui: **${ssKnown.toLocaleString('id')}** dari ${count(`SELECT COUNT(*) c FROM master_items`).toLocaleString('id')}`);
-  p(`- Skor Kesehatan [A-4] = AMAN / (item ber-SS) = ${ssKnown ? (100 * aman / ssKnown).toFixed(1) : 0}%  *(berdasarkan ${ssKnown.toLocaleString('id')} item)*`);
+  p(`- Item yang bisa dinilai (stok & SS diketahui): **${assessable.toLocaleString('id')}**`);
+  p(`- Skor Kesehatan [A-4] = AMAN / assessable = ${assessable ? (100 * aman / assessable).toFixed(1) : 0}%`);
   p(`- median defisit item TIDAK_AMAN/OUT_OF_STOCK = ${fmt(summary.calc?.median)} · P75 = ${fmt(summary.calc?.p75)}`);
   p();
 
@@ -212,4 +144,4 @@ function writeReport() {
   fs.writeFileSync(path.join(ROOT, 'AUDIT', '03_ingest_report.md'), L.join('\n'));
   console.log('  → AUDIT/03_ingest_report.md');
 }
-const fmt = (n) => (n === null || n === undefined ? 'n/a' : Math.round(n * 100) / 100);
+function fmt(n) { return n === null || n === undefined ? 'n/a' : Math.round(n * 100) / 100; }
