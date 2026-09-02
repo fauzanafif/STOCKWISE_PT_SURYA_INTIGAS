@@ -1,4 +1,4 @@
-# STOCKWISE — Laporan Ingest (2026-09-02 04:21)
+# STOCKWISE — Laporan Ingest (2026-09-02 06:08)
 
 Dibuat oleh `tools/build_stockwise_db.mjs` dari `DATAFIX/`. Sumber kebenaran = Excel; `stockwise.db` = layer normalized.
 

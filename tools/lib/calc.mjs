@@ -20,16 +20,20 @@ export function runCalc(db, { threshold = LEAD_TIME_HIGH_THRESHOLD_DAYS } = {}) 
      WHERE master_item_id IS NULL;
   `);
 
+  // one row per master item — latest snapshot, preferred safety params (manual input wins)
   const items = db.prepare(`
     SELECT m.id,
-           s.sisa_stok_num  AS sisa,
-           s.sisa_stok_known AS sisa_known,
-           ssp.safety_stock AS ss,
-           ssp.lead_time_days AS lt,
-           ssp.avg_12_bln   AS avg12
+      (SELECT s.sisa_stok_num  FROM inventory_snapshots s WHERE s.master_item_id = m.id
+         ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1) AS sisa,
+      (SELECT s.sisa_stok_known FROM inventory_snapshots s WHERE s.master_item_id = m.id
+         ORDER BY s.snapshot_date DESC, s.id DESC LIMIT 1) AS sisa_known,
+      (SELECT ssp.safety_stock  FROM safety_stock_params ssp WHERE ssp.master_item_id = m.id
+         ORDER BY (ssp.source_sheet = 'input manual (app.py)') DESC, ssp.id LIMIT 1) AS ss,
+      (SELECT ssp.lead_time_days FROM safety_stock_params ssp WHERE ssp.master_item_id = m.id
+         ORDER BY (ssp.source_sheet = 'input manual (app.py)') DESC, ssp.id LIMIT 1) AS lt,
+      (SELECT ssp.avg_12_bln     FROM safety_stock_params ssp WHERE ssp.master_item_id = m.id
+         ORDER BY (ssp.source_sheet = 'input manual (app.py)') DESC, ssp.id LIMIT 1) AS avg12
     FROM master_items m
-    LEFT JOIN inventory_snapshots s ON s.master_item_id = m.id
-    LEFT JOIN safety_stock_params ssp ON ssp.master_item_id = m.id
   `).all();
 
   // per-item incoming (outstanding procurement) — approximation, see [A-17]

@@ -25,7 +25,10 @@ def check(name, fn):
 
 
 def main():
-    from stockwise import calc, config, db, queries, textnorm, ui  # noqa: F401
+    from utils import calc_engine as calc  # noqa: F401
+    from utils import database as db
+    from utils import dashboard_ui as ui  # noqa: F401
+    from utils import ingest, master_sync, queries, report_pdf, sw_config, textnorm  # noqa: F401
 
     print("imports ok")
     assert db.db_exists(), "stockwise.db not found — run tools/build_stockwise_db.mjs first"
@@ -61,6 +64,8 @@ def main():
 
     row = db.fetch_one("SELECT id FROM master_items WHERE kode_barang IS NOT NULL LIMIT 1")
     check("item_detail", lambda: queries.item_detail(row["id"]))
+
+    check("build_executive_pdf", lambda: report_pdf.build_executive_pdf())
 
     print("calc engine (re-run):")
     check("calc.run_calc", lambda: calc.run_calc(notes="smoke_test"))

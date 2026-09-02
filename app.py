@@ -25,6 +25,24 @@ from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNI
 LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
 
 
+def _sync_to_db(df):
+    """Mirror the current master into stockwise.db so the other pages (Procurement,
+    Pemakaian, Tracking, Cocokkan Barang, …) read the same data. Debounced on a
+    content hash; any failure is swallowed so this never breaks the dashboard."""
+    try:
+        key_cols = [c for c in ("Kode Barang", "Deskripsi Barang", "Sisa Stok", "Safety Stock",
+                                "Lead Time", "MIN PR", "Letak Gudang", "Kategori Induk")
+                    if c in df.columns]
+        h = int(pd.util.hash_pandas_object(df[key_cols].astype(str), index=False).sum())
+        if h == st.session_state.get("_db_synced_hash"):
+            return
+        from utils.master_sync import sync_master
+        sync_master(df, source_file=st.session_state.get("file_name") or "app.py")
+        st.session_state["_db_synced_hash"] = h
+    except Exception:  # noqa: BLE001 - the legacy dashboard must keep working regardless
+        pass
+
+
 @st.cache_data
 def _logo_data_uri() -> str:
     """Base64 data URI for the company logo, so it can be embedded directly in
@@ -592,8 +610,9 @@ def main():
     init_state()
 
     st.markdown(
-        f'<div class="sw-hero"><img class="sw-hero-logo" src="{_logo_data_uri()}"><h1>STOCKWISE</h1></div>'
-        '<div class="sw-hero-caption">Upload, edit, pantau stok dan semuanya update otomatis, gak perlu refresh.</div>',
+        f'<div class="sw-hero"><img class="sw-hero-logo" src="{_logo_data_uri()}"><h1>STOCKWISE — Inventory Master</h1></div>'
+        '<div class="sw-hero-caption">Upload &amp; edit data barang di sini. Procurement, Pemakaian, Tracking, '
+        'dan pencocokan barang ada di menu sebelah kiri.</div>',
         unsafe_allow_html=True,
     )
 
@@ -709,6 +728,7 @@ def main():
         full_df = merge_edits(full_df, filtered_view, edited_view)
         full_df = recalculate(full_df, st.session_state.lead_time_threshold)
         st.session_state.df = full_df
+        _sync_to_db(full_df)
 
     filtered_final = apply_filters(full_df, filters)
 

@@ -12,7 +12,9 @@ Prinsip yang dipegang:
 - Tidak ada blind insert kumulatif — UPSERT by `row_hash` (RULE 7).
 - Fuzzy match tidak pernah otomatis jadi match final (RULE 8).
 - Nilai yang tidak diketahui = `NULL` + flag, **bukan `0`** (RULE 11, 13).
-- `app.py` lama TIDAK disentuh (RULE 10). Sistem baru dibangun berdampingan.
+- `app.py` + fitur lamanya dipertahankan (RULE 10). Satu-satunya tambahan: `_sync_to_db()` —
+  menulis master yang diupload/diedit ke `stockwise.db` supaya halaman lain ikut kepakai; dibungkus
+  try/except sehingga tidak pernah membuat dashboard lama gagal. Sistem baru = halaman di `pages/`.
 
 ---
 
@@ -60,7 +62,7 @@ Dashboard baru memakai definisi spec #11: `stock_health = count(AMAN) / count(it
 SS hanya diketahui untuk sebagian kecil katalog. Nilai legacy `(AMAN+BEP)/total` tetap dipakai `app.py` lama.
 
 ### [A-5] Threshold Lead Time
-`stockwise/config.py`:
+`utils/sw_config.py`:
 ```
 LEAD_TIME_HIGH_THRESHOLD_DAYS = 14   # PENDING konfirmasi bisnis — bukan auto-derive
 ```
