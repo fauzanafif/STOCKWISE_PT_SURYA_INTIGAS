@@ -1,339 +1,372 @@
 # STOCKWISE
 
-> **Dua aplikasi dalam repo ini:**
->
-> | | Entry point | Data | Untuk |
-> |---|---|---|---|
-> | **v1 — Dashboard Master (legacy)** | `streamlit run app.py` | 1 file Excel master, di memori | Pantau stok cepat dari satu file, tanpa setup |
-> | **v2 — Inventory Intelligence System** | `streamlit run Home.py` | 9 workbook → `stockwise.db` | Procurement flow, usage analysis, tracking, matching, lineage |
->
-> v1 tidak diubah. v2 dibangun berdampingan. Detail v2: [`AUDIT/`](AUDIT/) (audit sumber, keputusan/asumsi, data dictionary, ERD, laporan ingest) dan bagian [STOCKWISE v2](#stockwise-v2) di bawah.
+**Inventory Intelligence System — PT Surya Inti Gas.**
+
+Baca 9 workbook operasional Excel → satu database ternormalisasi (`stockwise.db`) → calculation
+engine → dashboard yang bisa menjawab pertanyaan manajemen dan menelusuri **setiap angka** kembali
+ke baris Excel aslinya.
+
+```
+streamlit run Home.py          ← ini aplikasinya
+```
+
+> `app.py` adalah dashboard lama (v1): satu file Excel, di memori, tanpa database. Masih bisa
+> dijalankan (`streamlit run app.py`) tapi tidak dikembangkan lagi. Semua di bawah ini soal Home.py.
 
 ---
-
-## v1 — Dashboard Master (legacy)
-
-Dashboard inventory berbasis **Python + Streamlit + Pandas + Plotly**. Upload file Excel inventory, edit datanya langsung di tabel interaktif, dan lihat KPI, chart, insight, serta rekomendasi procurement ter-update otomatis — tanpa refresh halaman, tanpa database, tanpa login. File Excel yang diupload adalah satu-satunya sumber data; semua kalkulasi jalan ulang di memori setiap kali ada perubahan.
 
 ## Daftar Isi
 
-- [Tech Stack](#tech-stack)
+- [Gambaran Singkat](#gambaran-singkat)
+- [Arsitektur](#arsitektur)
+- [Instalasi](#instalasi)
+- [FLOW — cara pakai](#flow--cara-pakai)
+  - [A. Setup pertama kali](#a-setup-pertama-kali)
+  - [B. Pemakaian harian / bulanan](#b-pemakaian-harian--bulanan)
+  - [C. Loop pembersihan data](#c-loop-pembersihan-data)
+  - [D. Menjawab pertanyaan manajemen](#d-menjawab-pertanyaan-manajemen)
+- [Peta Halaman](#peta-halaman)
+- [File yang Diupload](#file-yang-diupload)
+- [Model Data](#model-data)
+- [Rumus / Calculation Engine](#rumus--calculation-engine)
+- [Konsep Stok](#konsep-stok)
+- [Kenapa ada Node.js di project Python](#kenapa-ada-nodejs-di-project-python)
+- [Tes](#tes)
+- [Status & Batasan](#status--batasan)
 - [Struktur Project](#struktur-project)
-- [Menjalankan Secara Lokal](#menjalankan-secara-lokal)
-- [Download Template](#download-template)
-- [Upload Excel](#upload-excel)
-- [Skema Data (Kolom Excel)](#skema-data-kolom-excel)
-- [Cara Membaca Dashboard](#cara-membaca-dashboard)
-- [Rumus Perhitungan — Detail Lengkap](#rumus-perhitungan--detail-lengkap)
-- [Tab Procurement](#tab-procurement)
-- [Filter (Sidebar)](#filter-sidebar)
-- [Edit Data](#edit-data)
-- [Export Data](#export-data)
-- [Bagaimana Reactive Calculation Bekerja](#bagaimana-reactive-calculation-bekerja)
-
-## Tech Stack
-
-| Layer | Library/Tool | Kegunaan |
-|---|---|---|
-| Bahasa | Python 3 | Seluruh logika, tidak ada JS/TS |
-| UI framework | [Streamlit](https://streamlit.io) `>=1.36` | Render halaman, tab, sidebar, `st.data_editor`, sekaligus jadi "server" (rerun script tiap ada interaksi) |
-| Data processing | [pandas](https://pandas.pydata.org) `>=2.0` | Semua transformasi tabel: filter, groupby, kalkulasi kolom |
-| Numerik | [numpy](https://numpy.org) `>=1.26` | `np.where` untuk kolom Status, operasi vektor |
-| Baca Excel | [openpyxl](https://openpyxl.readthedocs.io) `>=3.1` | Parsing file `.xlsx` yang diupload, deteksi sheet & header |
-| Tulis Excel | [XlsxWriter](https://xlsxwriter.readthedocs.io) `>=3.1` | Generate file export & template dengan conditional formatting (warna AMAN/TIDAK AMAN/BEP) |
-| Tulis PDF | [ReportLab](https://www.reportlab.com/opensource/) `>=4.0` | Generate laporan PDF (KPI, tabel barang, Procurement Priority) — pure Python, tidak butuh binary eksternal |
-| Charting | [Plotly](https://plotly.com/python/) `>=5.20` (`plotly.express` + `plotly.graph_objects`) | Semua 7 visualisasi di dashboard, dirender via `st.plotly_chart` |
-| State | `st.session_state` (bawaan Streamlit) | Menyimpan dataframe aktif & pengaturan (threshold lead time) antar-rerun, tidak butuh Redux/Zustand |
-| Styling | CSS custom (`st.markdown(unsafe_allow_html=True)`) di `app.py` | Font Inter (Google Fonts), kartu KPI, health bar, kartu insight |
-| Auth / DB | **Tidak ada** | Single-user, stateless per sesi browser; tidak ada login, role, atau database — "database"-nya adalah file Excel itu sendiri |
-
-Tidak ada framework frontend terpisah (React/Vue dst.) — satu file `app.py` di-render penuh oleh Streamlit, navigasi antar-halaman cukup pakai `st.tabs`.
-
-## Struktur Project
-
-```text
-STOCKWISE/
-├── app.py                     # entry point: page config, CSS, sidebar, 4 tab, wiring reaktif
-├── requirements.txt
-├── assets/logo.png             # logo aplikasi (di-embed sebagai base64)
-├── data/                       # (opsional) tempat menaruh file Excel contoh
-├── utils/
-│   ├── excel_handler.py        # deteksi sheet & baris header, fuzzy-match kolom, parsing "STOK 15 PCS", export & template Excel
-│   ├── pdf_export.py           # generator laporan PDF (KPI, tabel barang, Procurement Priority) via ReportLab
-│   ├── calculations.py         # pipeline reaktif: Selisih, Status, Defisit, Priority Score/Level
-│   ├── insights.py             # generator teks insight otomatis (rule-based)
-│   ├── recommendations.py      # generator rekomendasi procurement per baris (rule-based)
-│   └── theme.py                 # palet warna bersama — dipakai KPI, chart, dan badge status
-└── components/
-    ├── kpi.py                  # kartu KPI + health bar
-    ├── charts.py                # ke-7 visualisasi Plotly
-    └── data_editor.py           # st.data_editor + column_config (kolom mana editable, mana read-only)
-```
-
-## Menjalankan Secara Lokal
-
-```bash
-pip install -r requirements.txt
-streamlit run app.py
-```
-
-Aplikasi terbuka di `http://localhost:8501`.
-
-## Download Template
-
-Belum punya file, atau ingin memastikan format Excel Anda sesuai? Klik **📥 Download Template Excel** di sidebar (atau di layar awal sebelum upload). Template memakai layout yang sama seperti export STOCKWISE asli (judul di baris 1-4, header di baris 5) lengkap dengan 2 baris contoh data — satu AMAN, satu TIDAK AMAN — supaya format `Sisa Stok` seperti `STOK 15 PCS` langsung terlihat jelas.
-
-## Upload Excel
-
-1. Buka sidebar **Data** → **Upload Excel Inventory**.
-2. Jika workbook Anda punya beberapa sheet (mis. `Data`, `Dropdown List`, `cetak`, `Sheet2`), aplikasi otomatis memakai sheet bernama **"Data"** sebagai dataset utama — sheet `cetak`/`Sheet2`/`Dropdown List` tidak pernah dibaca sebagai data inventory. Jika tidak ada sheet bernama "Data", aplikasi jatuh ke sheet pertama yang bukan salah satu dari ketiganya.
-3. Baris header **tidak harus di baris pertama** — aplikasi otomatis mencari baris yang memuat kolom "Kode Barang" (sampai 50 baris pertama sheet tersebut), jadi file dengan judul/baris kosong di atas header tetap terbaca.
-4. Nama kolom tidak harus persis sama — kolom seperti `Safety Stock` atau `SISA STOK (22/08/2026)` dikenali lewat pencocokan kata kunci (`SAFETY`+`STOCK`, `SISA`+`STOK`), begitu juga `√LT` dan `MIN PR`, jadi variasi penulisan/tanggal di nama kolom tidak masalah.
-5. Kolom `Sisa Stok` boleh berformat teks seperti `STOK 15 PCS` — nilai numeriknya diekstrak otomatis lewat regex (`STOK 15 PCS` → `15`). `Safety Stock` dan `MIN PR` boleh sepenuhnya kosong — dianggap valid dan dinormalisasi jadi `0` untuk kalkulasi.
-6. Jika ada sheet **"Dropdown List"**, pilihannya (Kategori Induk/Anak 1-3, UoM) otomatis mengisi pilihan selectbox di tabel edit, digabung dengan nilai yang sudah ada di data.
-7. Jika kolom wajib (`Kode Barang`, `Deskripsi Barang`, `Safety Stock`, `Sisa Stok`) tetap tidak ditemukan setelah pencocokan otomatis, muncul pesan error jelas — termasuk sheet & baris header yang terdeteksi dan daftar kolom yang berhasil dibaca — tanpa crash.
-8. Buka expander **🐞 Debug Excel** di tab Data Inventory untuk melihat sheet yang dipakai, baris header, kolom yang terdeteksi, dan pilihan dropdown yang terbaca.
-
-## Skema Data (Kolom Excel)
-
-Didefinisikan di `utils/excel_handler.py`.
-
-**Kolom wajib** (aplikasi error kalau tidak ketemu): `Kode Barang`, `Deskripsi Barang`, `Safety Stock`, `Sisa Stok`.
-
-**Kolom master lain yang dikenali** (opsional): Kategori Induk, Kategori Anak 1/2/3, UoM, Perlu Blueprint?, Nama Alias, Letak Gudang, Letak Rak, Blueprint IMG/Detail PDF/3D View, Lead Time, `√LT`, MIN PR.
-
-**Kolom numerik** (dipaksa jadi angka, kosong → 0): `Safety Stock`, `Sisa Stok`, `Lead Time`, `MIN PR`.
-
-**Kolom hasil kalkulasi** (read-only, dibuat otomatis, jangan diisi manual di Excel karena akan ditimpa): `Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, `Rekomendasi`.
-
-## Cara Membaca Dashboard
-
-Tab **Dashboard** tersusun dari atas ke bawah dalam 4 blok. Semua angka di sini selalu mengikuti filter sidebar yang sedang aktif.
-
-### 1. KPI Cards + Health Bar (paling atas)
-
-7 kartu angka besar, lalu satu progress bar "Skor Kesehatan Inventory":
-
-| Kartu | Arti |
-|---|---|
-| 📦 Total Barang | Jumlah baris/kode barang di data yang sedang difilter |
-| ✅ Barang Aman | Jumlah barang dengan Status = AMAN |
-| 🚨 Barang Tidak Aman | Jumlah barang dengan Status = TIDAK AMAN |
-| 🎯 Barang BEP | Jumlah barang dengan Status = BEP (`Sisa Stok` dan `Safety Stock` sama-sama 0) |
-| 🏬 Total Stok | Total `Sisa Stok` dijumlahkan semua barang |
-| 🛡️ Total Safety Stock | Total `Safety Stock` dijumlahkan semua barang |
-| 📉 Defisit Stok | Total `Defisit` — makin besar makin banyak yang perlu dibeli. Warna kartu ini otomatis merah kalau > 0, hijau kalau 0 |
-
-Health bar di bawahnya menunjukkan persentase **Barang Aman + Barang BEP** terhadap total (BEP dihitung sebagai "aman" di skor ini — beda dari kartu "Barang Aman" di atas yang tetap Status = AMAN murni). Warna berubah otomatis: **hijau "Sehat"** ≥80%, **kuning "Perlu Perhatian"** 50–79%, **merah "Kritis"** <50%.
-
-### 2. "Kondisi Inventory Saat Ini" — 3 chart
-
-- **Donut "Status Inventory"** (kiri) — proporsi AMAN (hijau), TIDAK AMAN (merah), dan BEP (ungu). Cara baca: makin besar irisan merah, makin banyak barang di bawah safety stock; irisan ungu menandakan barang yang belum punya kebijakan stok sama sekali (stok maupun safety stock-nya 0).
-- **Bar horizontal "Top Barang dengan Defisit Terbesar"** (kanan) — 10 barang dengan `Defisit` terbesar, diurutkan menurun, warna gradasi biru sesuai besarnya defisit. Barang BEP tidak pernah muncul di sini karena Defisit-nya selalu 0. Kalau tidak ada barang defisit, chart ini diganti pesan sukses.
-- **Grouped bar "Stok vs Safety Stock"** (lebar penuh) — untuk 10 barang dengan defisit terbesar yang sama, membandingkan batang biru (`Sisa Stok`) vs oranye (`Safety Stock`) berdampingan. Kalau batang biru lebih pendek dari oranye, barang itu di bawah ambang aman.
-
-### 3. "Analisis per Lokasi & Kategori" — 4 chart, 2 kolom
-
-- **Stacked bar "Inventory per Gudang — Status"** — per `Letak Gudang`, tumpukan hijau (AMAN) + merah (TIDAK AMAN) + ungu (BEP). Gudang diurutkan dari yang jumlah barangnya paling banyak.
-- **Grouped bar "Inventory per Gudang — Stok vs Safety Stock"** — per gudang, total `Sisa Stok` (biru) vs total `Safety Stock` (oranye) dijumlahkan semua barang di gudang itu.
-- **Stacked bar "Inventory per Kategori Induk"** — logika sama seperti chart gudang, tapi dikelompokkan per `Kategori Induk`.
-- **Scatter "Lead Time vs Defisit"** — setiap titik = satu barang (bukan agregat). Sumbu X = `Lead Time`, sumbu Y = `Defisit`, warna titik = Status (hijau/merah/ungu), ukuran titik makin besar = defisit makin besar. Titik BEP selalu menempel di Defisit = 0. **Cara baca paling penting**: titik merah besar yang letaknya di kanan atas (lead time lama + defisit besar) adalah kandidat prioritas procurement tertinggi — logika yang sama persis dengan `Priority Score`.
-
-### 4. Inventory Insight (paling bawah)
-
-3–4 kalimat ringkas otomatis (lihat [rumus insight](#insight-otomatis) di bawah) — semacam "TL;DR" dari semua chart di atasnya, langsung dalam bahasa natural.
-
-## Rumus Perhitungan — Detail Lengkap
-
-Semua kolom turunan dihitung ulang oleh `recalculate()` di [`utils/calculations.py`](utils/calculations.py) setiap kali data berubah (upload baru atau edit tabel). Tidak ada nilai yang disimpan permanen — semuanya dihitung ulang dari `Sisa Stok`, `Safety Stock`, dan `Lead Time` mentah setiap rerun.
-
-**1. Selisih**
-```
-Selisih = Sisa Stok − Safety Stock
-```
-Nilai kosong dianggap 0 sebelum dikurangkan. Selisih negatif = stok sudah di bawah batas aman.
-
-**2. Status**
-```
-Status = "AMAN"       jika Selisih ≥ 0
-Status = "TIDAK AMAN" jika Selisih <  0
-Status = "BEP"        jika Sisa Stok = 0  DAN  Safety Stock = 0   (menang di atas dua aturan di atas)
-```
-BEP ("Break Even Point" dalam konteks aplikasi ini berarti stok maupun ambang batas amannya sama-sama 0) dicek terpisah dari Selisih: `Sisa Stok = 0` dan `Safety Stock = 0` membuat `Selisih = 0` juga, yang secara formula murni AMAN — tapi kondisi ini lebih menandakan barang yang belum diberi kebijakan stok sama sekali (bukan benar-benar "aman"), jadi dipisahkan jadi status sendiri.
-
-**3. Defisit** (seberapa jauh di bawah safety stock, tidak pernah negatif)
-```
-Defisit = max(Safety Stock − Sisa Stok, 0)
-```
-Barang AMAN maupun BEP otomatis punya Defisit = 0 (karena `Safety Stock − Sisa Stok` akan ≤ 0 lalu dipangkas ke 0).
-
-**4. Priority Score** (dasar pengurutan tab Procurement)
-```
-jika Status = TIDAK AMAN:
-    Priority Score = (Defisit × 2.0) + (Lead Time × 1.0)
-jika Status = AMAN:
-    Priority Score = 0
-```
-Bobot `2.0` untuk Defisit dan `1.0` untuk Lead Time adalah default hardcoded di `compute_priority_score()` — artinya besarnya kekurangan stok dianggap **2× lebih penting** daripada lamanya lead time saat menentukan urutan prioritas beli.
-
-**5. Priority Level**
-```
-jika Status = AMAN atau BEP → "LOW"
-jika Status = TIDAK AMAN:
-    threshold_defisit = median(Defisit dari semua barang TIDAK AMAN)
-    "HIGH"   jika Defisit ≥ threshold_defisit  ATAU  Lead Time ≥ Ambang Lead Time
-    "MEDIUM" untuk sisanya
-```
-"Ambang Lead Time" (default sidebar) dihitung oleh `suggest_lead_time_threshold()`: **persentil ke-75 dari kolom Lead Time** di seluruh dataset, dibulatkan; jatuh ke default `14` kalau kolom kosong/tidak valid. Nilai ini bisa diubah manual lewat input **"Ambang Lead Time Tinggi"** di sidebar, dan perubahannya langsung memengaruhi Priority Level & Rekomendasi di semua tab.
-
-**6. Rekomendasi** (teks per baris)
-```
-jika Selisih ≥ 0 dan Sisa Stok = 0 dan Safety Stock = 0 → "Stok dan Safety Stock sama-sama 0 (BEP) — cek apakah barang ini memang non-aktif atau datanya belum diisi."
-jika Selisih ≥ 0 (selain kondisi BEP di atas)            → "Stok aman, tidak perlu replenishment segera."
-jika Selisih < 0 dan Lead Time ≥ Ambang Lead Time        → "Prioritas tinggi untuk procurement."
-jika Selisih < 0 dan Lead Time <  Ambang Lead Time       → "Segera lakukan replenishment."
-```
-
-**7. Skor Kesehatan Inventory** (health bar KPI)
-```
-Skor Kesehatan (%) = round((Barang Aman + Barang BEP) / Total Barang × 100, 1)
-```
-BEP dihitung sebagai "aman" khusus untuk skor ini (beda dari kartu KPI "Barang Aman" yang tetap Status = AMAN murni). ≥80% → "Sehat" (hijau), 50–79.9% → "Perlu Perhatian" (kuning), <50% → "Kritis" (merah).
-
-### Insight Otomatis
-
-`utils/insights.py` menghasilkan kalimat berdasarkan aturan berikut, dievaluasi terhadap data yang sedang difilter:
-
-1. Kalau ada barang berstatus BEP → tampil dulu jumlahnya, sebagai pengingat untuk dicek apakah barang itu memang non-aktif atau datanya belum diisi.
-2. Kalau tidak ada barang TIDAK AMAN → tampil "✅ Semua stok lainnya aman, masih di atas safety stock."
-3. Kalau ada → tampil jumlah barang TIDAK AMAN.
-4. Barang dengan `Defisit` terbesar (`Defisit.idxmax()`) disebutkan namanya secara spesifik beserta jumlah kekurangannya.
-5. Kalau ada barang TIDAK AMAN dengan `Lead Time ≥ Ambang Lead Time`, jumlahnya disebutkan sebagai "yang paling perlu diprioritaskan buat dibeli".
-
-## Tab Procurement
-
-Berisi hanya barang dengan `Status = TIDAK AMAN`, **diurutkan menurun berdasarkan Priority Score** (bukan Defisit atau Lead Time saja — jadi barang dengan kombinasi defisit besar + lead time lama akan selalu di atas).
-
-3 metric di atas tabel:
-- **Barang Perlu Aksi** = jumlah baris TIDAK AMAN.
-- **Total Defisit** = jumlah `Defisit` dari semua barang tersebut.
-- **Prioritas Tinggi** = jumlah baris dengan `Priority Level = "HIGH"`.
-
-Baris `Priority Level` diwarnai (merah=HIGH, kuning=MEDIUM, hijau=LOW) langsung di tabel untuk pemindaian cepat.
-
-## Filter (Sidebar)
-
-Semua filter berikut bekerja bersama (AND) dan langsung memengaruhi KPI, ke-7 chart, insight, dan tab Procurement secara serentak — tidak perlu tombol "Apply":
-
-- Kategori Induk, Kategori Anak 1/2/3, UoM, Letak Gudang, Status, "Perlu Blueprint?" (multiselect)
-- Pencarian bebas di Kode Barang / Deskripsi Barang
-- Range Lead Time (angka min–max)
-- Range Selisih (angka min–max) — bisa negatif, karena `Selisih = Sisa Stok − Safety Stock` negatif artinya TIDAK AMAN. Berguna buat misalnya nyari barang yang cuma "dikit di bawah" safety stock (mis. Selisih -5 sampai -1), atau barang yang sangat kelebihan stok.
-- **Ambang Lead Time Tinggi** — bukan filter data, tapi mengubah parameter rumus Priority Level & Rekomendasi (lihat bagian rumus di atas)
-
-## Edit Data
-
-Buka tab **Data Inventory**. Semua kolom master (Kode Barang, kategori, deskripsi, UoM, lokasi, Safety Stock, Sisa Stok, Lead Time, `√LT`, MIN PR, dst.) bisa diedit langsung di tabel (`st.data_editor`). Kolom hasil kalkulasi (`Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, `Rekomendasi`) bersifat read-only karena selalu dihitung ulang otomatis.
-
-## Export Data
-
-Buka tab **Export**, pilih **Seluruh Data** atau **Data Terfilter**, lalu unduh dalam 3 format:
-
-- **Excel (.xlsx)** — data lengkap semua kolom, dengan warna conditional di kolom Status (AMAN=hijau, TIDAK AMAN=merah, BEP=ungu). Untuk diolah lagi (pivot, formula, dll).
-- **PDF** — laporan siap cetak (`utils/pdf_export.py`, dibangun dengan [ReportLab](https://www.reportlab.com/opensource/), tidak butuh binary eksternal seperti wkhtmltopdf), landscape A4, isinya: ringkasan KPI, tabel daftar barang (Kode, Deskripsi, Kategori Induk, Gudang, UoM, Safety Stock, Sisa Stok, Selisih, Status berwarna), dan lampiran **Procurement Priority** (barang TIDAK AMAN diurutkan Priority Score, dengan Priority Level berwarna) — beda dari Excel/CSV, PDF ini bukan dump data mentah tapi ringkasan yang sudah dikurasi kolomnya biar enak dibaca/dicetak.
-- **CSV** — data lengkap semua kolom, untuk sistem lain yang butuh format polos.
-
-Excel dan CSV selalu menyertakan `Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, dan `Rekomendasi` — bukan cuma data mentahnya.
-
-## Bagaimana Reactive Calculation Bekerja
-
-1. Data yang sedang aktif disimpan di `st.session_state.df`, sehingga tidak hilang saat Streamlit melakukan rerun.
-2. Setiap kali `st.data_editor` mendeteksi perubahan (Safety Stock, Sisa Stok, tambah/hapus baris, dll), Streamlit menjalankan ulang seluruh script dari atas.
-3. Hasil edit pada subset yang terfilter digabungkan kembali ke dataset penuh (`merge_edits`), supaya edit di tampilan terfilter tidak menghapus baris lain.
-4. `utils.calculations.recalculate()` dipanggil ulang: menghitung `Selisih`, `Status`, `Defisit`, `Priority Score`, `Priority Level`, dan `Rekomendasi` dari nol berdasarkan rumus di atas.
-5. Dataset yang sudah dihitung ulang disimpan kembali ke `session_state`, lalu difilter ulang sesuai sidebar sebelum dipakai oleh KPI, chart, insight, dan tab Procurement.
-
-Karena semua tab dan komponen membaca dari dataframe yang sama (yang baru saja dihitung ulang di run yang sama), KPI, chart, dan insight selalu konsisten satu sama lain — tanpa perlu tombol refresh manual.
 
 ---
 
-## STOCKWISE v2
+## Gambaran Singkat
 
-Inventory Intelligence System: baca 9 workbook operasional → satu database normalized (`stockwise.db`) →
-calculation engine → dashboard multi-halaman yang bisa menjawab pertanyaan manajemen dan menelusuri
-tiap angka kembali ke baris Excel.
-
-### Arsitektur
-
-```
-DATAFIX/*.xlsx  ──upload per modul──>  ingest (parser + matching + UPSERT)  ──>  stockwise.db
-                                                                                     │
-                                                              calc engine (stockwise/calc.py)
-                                                                                     │
-                                                     Streamlit multipage (Home.py + pages/)
-```
-
-`stockwise.db` (SQLite, satu file, di-`.gitignore`) = **single source of truth**. Excel = import layer.
-Semua halaman baca dari DB, tidak pernah parsing Excel saat render.
-
-### Menjalankan
-
-```bash
-pip install -r requirements.txt          # streamlit, pandas, plotly, dll (sama seperti v1)
-cd tools && npm install && cd ..          # sekali — untuk ETL (butuh Node.js 22+)
-
-# isi database dari folder DATAFIX/ (bootstrap):
-node --experimental-sqlite tools/build_stockwise_db.mjs
-#   -> stockwise.db + AUDIT/03_ingest_report.md
-
-streamlit run Home.py                     # buka dashboard v2
-```
-
-Upload harian lewat UI (**Data Management → Upload Center**) memanggil `tools/ingest_one.mjs` per file —
-kode yang sama, UPSERT by `row_hash`, jadi upload file kumulatif berulang tidak menggandakan data.
-
-### Kenapa ada Node di project Python
-
-ETL (baca Excel, normalisasi, matching, dedup) ditulis di Node karena bisa dites langsung terhadap
-data asli di environment ini; `stockwise.db` yang dihasilkan portabel dan dibaca oleh Python.
-Logika normalisasi & kalkulasi dicerminkan di `stockwise/textnorm.py` & `stockwise/calc.py`
-(harus tetap sinkron dengan `tools/lib/textnorm.mjs` & `tools/lib/calc.mjs`).
-
-Navigasi (`st.navigation`) dikelompokkan: **Mulai di sini** (Get Started — muncul otomatis sampai
-setup beres) · **Ringkasan** · **Operasional** · **Data & Referensi** · **Review & Kualitas**.
-
-### Halaman
-
-| Halaman | Isi |
+| | |
 |---|---|
-| Get Started | checklist setup 5 langkah; jadi halaman default sampai sistem siap |
-| Executive | KPI stok/risiko/procurement, sebaran status, 10 item mendesak, **export PDF**, tombol drill ke Inventory |
-| Ask STOCKWISE | jawaban preset (habis, tidak aman, PPB/PO open, top usage, per divisi/pelanggan, pinjam, maintenance) + mode **tanya satu barang** (sisa/SS/defisit/PPB/PO/outstanding/pemakaian) |
-| Inventory | daftar barang + status + filter cepat + grafik per kategori; klik baris → Item Detail |
-| Procurement | priority buy list (klik baris → detail), status PPB→PO→RI, outstanding, CSV |
-| Usage Analysis | konsumsi NPBG: trend bulanan, top item, per divisi/klasifikasi/pelanggan |
-| Tracking | Borrow/Lend, STPP, Ban (+BPN, +Deliver/Receive), Maintenance Kendaraan, Manufaktur, Pengembalian Bekas — semua bisa dicari |
-| Master Data | katalog barang, safety-stock params, alias |
-| Item Detail | 360°: stok, procurement, usage, tracking, blueprint, lineage ke baris Excel; back-link |
-| Data Management | Upload Center per modul, **Hitung ulang**, rebuild, riwayat proses, data quality |
-| Matching Review | filter antrian + **terima massal ≥ threshold** + review per baris + **buat master item** dari barang baru |
-| Safety Stock Review | untuk barang dengan SS/LT beda antar sheet: lihat semua varian, pilih yang benar |
+| **Input** | 9 file Excel di `DATAFIX/` (Master + PPB-RI + NPBG + 6 tracking). Diupload lewat UI. |
+| **Penyimpanan** | `stockwise.db` — SQLite, satu file, di-`.gitignore`. **Single source of truth.** |
+| **Yang dihitung** | Sisa stok, safety stock, selisih, defisit, status, priority, incoming, projected stock, rata-rata pemakaian — per barang, oleh satu calculation engine. |
+| **Yang bisa ditelusuri** | Tiap angka → baris Excel: nama file, sheet, nomor baris. |
+| **Stack** | Python 3.12 + Streamlit (UI) · SQLite (data) · Node.js (ETL: baca Excel, matching, dedup). |
+| **Auth** | Belum ada (single-user). |
 
-### Tes
+Excel = *import layer*. `stockwise.db` = *sumber kebenaran*. Halaman **tidak pernah** parsing Excel
+saat render — semua baca dari DB (spec §22, §35).
 
-```bash
-python tools/smoke_test.py     # semua query + calc engine + PDF terhadap stockwise.db asli
-python tools/test_pages.py      # render tiap halaman Streamlit headless, tangkap exception
+---
+
+## Arsitektur
+
+```
+   9 × Excel  (DATAFIX/ atau upload UI)
+        │
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ INGEST  (tools/*.mjs — Node)                                 │
+│  deteksi modul → deteksi header per-sheet → normalisasi →    │
+│  parsing tipe → MATCHING barang ke master → dedup (row_hash) │
+│  → UPSERT                                                    │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+   stockwise.db  ◄── keputusan review manual disimpan di sini juga
+        │           (matching_reviews, safety_stock_params.chosen_sheet)
+        ▼
+┌─────────────────────────────────────────────────────────────┐
+│ CALCULATION ENGINE  (stockwise/calc.py)                      │
+│  selisih · defisit · stock_status · priority · incoming ·    │
+│  projected_stock · avg_monthly_usage   → tabel calc_results  │
+└─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+   STREAMLIT  (Home.py = router + pages/*.py)
+   Dashboard · Inventory · Procurement · Pemakaian · Tracking ·
+   Tanya · Kelola Data · Cocokkan Barang · Safety Stock · Master · Item Detail
 ```
 
-Keduanya hijau per commit ini (Python 3.12, Streamlit 1.63).
+Matching & normalisasi ditulis dua kali dan **harus tetap sinkron**:
+`tools/lib/textnorm.mjs` ↔ `stockwise/textnorm.py`, `tools/lib/calc.mjs` ↔ `stockwise/calc.py`.
+Node dipakai untuk ETL (bisa dites langsung ke data asli); Python untuk app + calc di dalam UI.
 
-### Status & batasan (per bootstrap pertama)
+---
 
-- **Safety Stock** tersedia untuk ~8.600 item (13 sheet `SAFETY STOCK *`); **3.824 di antaranya
-  nilainya berbeda antar-sheet** → beresi di **Safety Stock Review**. Item tanpa SS bukan `0`,
-  statusnya `NO_SAFETY_STOCK`.
-- **Sisa Stok** kosong untuk ~71% item → status `UNKNOWN`, bukan stok 0.
-- Matching barang transaksi ↔ master ~55–58% otomatis. Sisanya: ~2.500 di **Matching Review** (punya
-  kandidat) + ~sisanya barang baru (buat master item / biarkan).
-- Semua asumsi kerja: [`AUDIT/00_decisions.md`](AUDIT/00_decisions.md).
+## Instalasi
+
+Butuh **Python 3.12+** dan **Node.js 22+** (Node punya `node:sqlite` bawaan).
+
+```bash
+# 1. dependency Python
+pip install -r requirements.txt
+
+# 2. dependency Node (sekali) — untuk ETL
+cd tools && npm install && cd ..
+
+# 3. isi database dari folder DATAFIX/ (bootstrap awal)
+node --experimental-sqlite tools/build_stockwise_db.mjs
+#    → stockwise.db + AUDIT/03_ingest_report.md   (~35 detik)
+
+# 4. jalankan
+streamlit run Home.py           # buka http://localhost:8501
+```
+
+Kalau belum ada `stockwise.db`, aplikasi membuka halaman **Mulai** dan menuntun upload.
+
+---
+
+## FLOW — cara pakai
+
+### A. Setup pertama kali
+
+Halaman **Mulai** (🚀) muncul otomatis dan menyorot **satu** langkah berikutnya:
+
+```
+1. Upload Master           →  Kelola Data ▸ Upload  ▸  tarik DATA.xlsx
+2. Upload transaksi        →  Kelola Data ▸ Upload  ▸  tarik 8 file lainnya (sekaligus juga bisa)
+3. Cocokkan barang         →  Cocokkan Barang       ▸  "Terima massal ≥ 0.98", review sisanya
+4. Beresi Safety Stock     →  Safety Stock          ▸  pilih sheet yang benar per barang
+```
+
+- Langkah 1–2 wajib. Langkah 3–4 **bisa dicicil** — dashboard tetap jalan, barang yang belum
+  beres statusnya jujur (`belum bisa dinilai` / `belum di-match`), bukan ditebak.
+- Setelah master + transaksi masuk & sekali hitung, halaman **Mulai** hilang; **Dashboard** jadi
+  halaman default.
+
+**Upload = satu aksi.** Di **Kelola Data ▸ Upload**, tarik semua file Excel sekaligus. Sistem:
+mengenali tiap file dari nama & isinya → memproses **master duluan** → membuang baris duplikat →
+mencocokkan barang ke master → menghitung ulang. Sekali klik, sekali tunggu.
+
+### B. Pemakaian harian / bulanan
+
+```
+Excel bulan ini (kumulatif penuh)
+        │  tarik ke Kelola Data ▸ Upload ▸ "Proses semua"
+        ▼
+UPSERT by row_hash   →  baris lama TIDAK digandakan
+                        baris baru ditambahkan
+                        status dokumen yang berubah ikut ter-update
+        │
+        ▼
+matching + hitung ulang otomatis  →  Dashboard langsung update
+```
+
+Tidak ada "hapus data lama" — upload file yang sudah nambah baris, selesai (spec §21).
+
+### C. Loop pembersihan data
+
+Dua antrian yang perlu dikerjakan manusia (bisa kapan saja, dicicil):
+
+```
+┌── Cocokkan Barang (🤝) ──────────────────────────────────────┐
+│  ~2.500 barang transaksi belum pasti = master mana            │
+│  • "Terima massal ≥ 0.98"  → ratusan/ribuan exact match       │
+│  • per baris: pilih kandidat / "barang baru" (buat master)    │
+│  • filter per tabel sumber & per confidence                   │
+└──────────────────────────────────────────────────────────────┘
+
+┌── Safety Stock (🛡️) ─────────────────────────────────────────┐
+│  ~3.800 barang: nilai SS/Lead Time beda antar 13 sheet        │
+│  • lihat semua varian bersebelahan                            │
+│  • klik "Pakai sheet X" → jadi acuan calculation engine       │
+└──────────────────────────────────────────────────────────────┘
+
+Setiap keputusan langsung tersimpan. Di dashboard muncul tombol
+   ↻ Terapkan sekarang
+→ hitung ulang sekali, semua angka ikut. (Aksi massal hitung ulang sendiri.)
+```
+
+### D. Menjawab pertanyaan manajemen
+
+**Tanya STOCKWISE** (💬) — dua mode:
+
+| Mode | Contoh |
+|---|---|
+| Pertanyaan umum | "Barang apa yang habis?" · "Barang mana harus dibeli duluan?" · "PPB mana belum selesai?" · "Divisi mana paling banyak pakai?" · "Barang dipinjam siapa?" |
+| Tanya satu barang | pilih barang → sisa · safety stock · defisit · **sudah PPB?** · **PO/diterima?** · **outstanding** · total pemakaian — satu layar |
+
+Atau **drill-down**: Dashboard → klik tombol status / klik baris Inventory / Procurement →
+**Item Detail** (360°: stok, PPB/RI, pemakaian per bulan, tracking, blueprint, **lineage ke baris Excel**)
+→ tombol "← Kembali".
+
+Contoh alur lengkap (dari spec §45):
+```
+Item "Regulator O2"
+  Sisa 5 · Safety 15 · Defisit 10 · Status TIDAK AMAN · Priority HIGH
+  → PPB: PPB/NA/25/.. (Requested)  → RI: 10 dari 20 diterima  → Outstanding 10
+  → Projected Stock 15   → Rekomendasi: prioritas tinggi
+  → Pemakaian NPBG: rata-rata X/bulan
+Semua angka bisa diklik sampai ke baris Excel-nya.
+```
+
+---
+
+## Peta Halaman
+
+| Grup | Halaman | Isi |
+|---|---|---|
+| Setup | **Mulai** | checklist setup, sorot 1 langkah berikutnya. Hilang saat siap. |
+| Pantau | **Dashboard** | KPI (item, stok, tidak aman, stok habis, critical, defisit, incoming, skor kesehatan), tombol drill per status, sebaran status, 10 item mendesak, **export PDF** |
+| | **Inventory** | semua barang + filter cepat (Tidak Aman / Stok Habis / Critical / BEP / …) + grafik per kategori; klik baris → Item Detail; export CSV |
+| | **Procurement** | *Priority Buy List* (klik baris → detail) + status **PPB → PO → RI** + outstanding per PPB |
+| | **Pemakaian** | konsumsi NPBG: trend bulanan, top barang, per divisi / klasifikasi / pelanggan / proyek |
+| | **Tracking** | Borrow/Lend · STPP · Ban Luar (+BPN, +Deliver/Receive) · Maintenance Kendaraan · Manufaktur & Assembly · Pengembalian Bekas — semua dengan kotak cari |
+| Tanya | **Tanya STOCKWISE** | pertanyaan preset + mode tanya satu barang |
+| Beresi Data | **Kelola Data** | Upload (multi-file, 1 klik) · Riwayat proses · Kualitas Data |
+| | **Cocokkan Barang** | antrian matching + terima massal + buat master item |
+| | **Safety Stock** | resolusi konflik SS/LT antar sheet |
+| Referensi | **Master Barang** | katalog · parameter safety stock · alias |
+| | **Item Detail** | 360° per barang + lineage (target drill-down) |
+
+---
+
+## File yang Diupload
+
+9 file, satu per modul. Sistem mengenali otomatis dari nama & sheet-nya
+(`tools/lib/detect_module.mjs`).
+
+| Modul | File | Sheet yang dibaca |
+|---|---|---|
+| Master Inventory | `DATA.xlsx` | `DATABASE UTAMA` + 13 × `SAFETY STOCK *` |
+| Procurement | `1. PPB - RI.xlsx` | `PPB`, `RI`, `PPB Perubahan` |
+| Pemakaian (NPBG) | `2. NPBG.xlsx` | `NPBG` |
+| Borrow & Lend | `3. Tracking Borrow & Lend.xlsx` | `Lend`, `Borrow` |
+| STPP | `4. Tracking STPP.xlsx` | `STPP`, `Maintenance` |
+| Ban Luar | `5. Tracking Ban Luar.xlsx` | `Ban Luar`, `Ban Luar BPN`, `Deliver & Receive Ban SIG-BPN` |
+| Maintenance Kendaraan | `6. Tracking Maintenance Assets.xlsx` | `Maintenance Kendaraan` |
+| Manufaktur & Assembly | `7. Tracking Manufaktur & Assembly.xlsx` | `Manufaktur & Assembly`, `Manufaktur & Jasa Lain-Lain` |
+| Pengembalian Bekas | `8. Tracking Pengembalian Bekas.xlsx` | `Spare Part`, `Spare Part Lain` |
+
+- Urutan tidak masalah — sistem proses master duluan. Bisa dicicil (upload sebagian dulu).
+- Sheet `cetak`, `Sheet2`, `Sheet6`, `Export List_Klasifikasi`, dan tiap `Dropdown List` diabaikan otomatis.
+- Header boleh di baris 2/3/4 — dideteksi per-sheet dari signature kolom.
+- `Sisa Stok` boleh teks (`STOK 15 PCS`, `STOK O PCS` → 0). Nilai kosong = *belum terdata*, **bukan 0**.
+
+CLI alternatif: `node --experimental-sqlite tools/ingest_batch.mjs --dir <folder>` (banyak file),
+atau `tools/ingest_one.mjs <modul> <file>` (satu file).
+
+---
+
+## Model Data
+
+Skema lengkap: [`db/schema.sql`](db/schema.sql). ERD: [`AUDIT/02_erd.md`](AUDIT/02_erd.md).
+Data dictionary (Excel → kolom DB): [`AUDIT/01_data_dictionary.md`](AUDIT/01_data_dictionary.md).
+
+Tabel inti: `master_items` · `inventory_snapshots` · `safety_stock_params` (+`_variants`) ·
+`monthly_consumption` · `ppb_lines` · `ppb_changes` · `ri_lines` · `po_derived` · `npbg_lines` ·
+`borrow_lend` · `stpp` · `tire_transactions` (+`_bpn_snapshots`, +`_deliver_receive`) ·
+`asset_maintenance` · `manufacturing` · `used_returns` · `vehicles` · `matching_reviews` ·
+`calc_runs` / `calc_results` · `upload_batches` / `import_errors` / `import_notes`.
+
+- ID internal barang: `ITEM-000001…`. Business key `kode_barang` bisa NULL / duplikat (dipertahankan + flag).
+- Tiap baris transaksi menyimpan `source_file`, `source_sheet`, `source_row`, `upload_batch_id`, `row_hash`.
+- Dedup: `row_hash = sha1(modul | no_dokumen | line_no | deskripsi_norm | qty | tgl)`.
+- `v_inventory` = `master_items` ⋈ `calc_results` (run terbaru) — dipakai semua query dashboard.
+
+**Relasi transaksi** pakai nomor dokumen (bukan foreign key keras, karena sumber sering pakai
+sentinel `-`/`ORIGIN`): `ppb.no_ppb` → `ri.no_ppb`; `ri.no_po` → `po_derived`; `stpp/borrow_lend/
+tire/maintenance/manufacturing/used_returns` `.ref_npbg` → `npbg.no_npbg`, `.ref_ri` → `ri.no_ri`.
+
+---
+
+## Rumus / Calculation Engine
+
+Satu tempat: [`stockwise/calc.py`](stockwise/calc.py) (dicerminkan `tools/lib/calc.mjs`).
+Semua halaman baca `calc_results`, tidak ada yang hitung sendiri.
+
+| Field | Rumus |
+|---|---|
+| `selisih` | `sisa_stok − safety_stock` (jika keduanya diketahui) |
+| `defisit` | `max(safety_stock − sisa_stok, 0)` |
+| `stock_status` | `UNKNOWN` (sisa tak terdata) · `BEP` (sisa=0 & SS 0/tak ada) · `NO_SAFETY_STOCK` (sisa ada, SS tak ada) · `OUT_OF_STOCK` (sisa=0, SS>0) · `TIDAK_AMAN` (0<sisa<SS) · `AMAN` (sisa≥SS) |
+| `is_critical` | `TIDAK_AMAN`/`OUT_OF_STOCK` **dan** (defisit ≥ P75 defisit unsafe **atau** priority HIGH) |
+| `priority_score` | unsafe → `defisit×2.0 + lead_time×1.0` ; else `0` |
+| `priority_level` | unsafe → `HIGH` bila defisit ≥ median(defisit unsafe) atau lead_time ≥ threshold ; else `MEDIUM` ; safe → `LOW` |
+| `incoming_qty` | `max( Σ qty PPB belum-final − Σ qty RI ber-PPB untuk barang itu, 0 )` — perkiraan, [A-17] |
+| `projected_stock` | `sisa_stok + incoming_qty` |
+| `avg_monthly_usage` | `avg_12_bln` dari sheet SAFETY STOCK, else `Σ qty NPBG / jumlah bulan aktif` |
+| Skor Kesehatan | `AMAN / (AMAN + TIDAK_AMAN + OUT_OF_STOCK) × 100` |
+
+Parameter (di [`stockwise/config.py`](stockwise/config.py), **menunggu konfirmasi bisnis** —
+[`AUDIT/00_decisions.md`](AUDIT/00_decisions.md)): `LEAD_TIME_HIGH_THRESHOLD_DAYS = 14`,
+bobot defisit `2.0`, bobot lead time `1.0`.
+
+---
+
+## Konsep Stok
+
+| Istilah | Arti |
+|---|---|
+| **Current Stock** (`sisa_stok`) | stok fisik sekarang (dari `DATABASE UTAMA`). Kosong → `UNKNOWN`. |
+| **Safety Stock** | batas minimum aman (dari 13 sheet `SAFETY STOCK *`). Tak ada → `NO_SAFETY_STOCK`, **bukan 0**. |
+| **Deficit** | `Safety − Current` bila positif. |
+| **Incoming** | sudah dipesan (PPB belum-final) tapi belum diterima (RI). |
+| **Projected Stock** | `Current + Incoming` — perkiraan stok setelah barang datang. |
+| `OUT_OF_STOCK` ≠ `TIDAK_AMAN` | habis (=0) vs di bawah safety (0<x<SS). Beda status. |
+
+---
+
+## Kenapa ada Node.js di project Python
+
+ETL (baca Excel dengan header tak beraturan, normalisasi, matching ~50% non-exact, dedup) ditulis
+di Node karena bisa diuji langsung terhadap data asli. `stockwise.db` yang dihasilkan portabel dan
+dibaca Python. Upload lewat UI (`stockwise/ingest.py`) memanggil `tools/ingest_batch.mjs` — kode
+yang sama dengan bootstrap. Logika normalisasi & kalkulasi dicerminkan di Python (`stockwise/
+textnorm.py`, `stockwise/calc.py`) untuk dipakai di dalam UI; keduanya harus tetap sinkron dengan
+versi `.mjs`.
+
+---
+
+## Tes
+
+```bash
+python tools/smoke_test.py     # semua fungsi query + calc engine + PDF, terhadap stockwise.db asli
+python tools/test_pages.py     # render tiap halaman Streamlit headless (streamlit.testing), tangkap exception
+```
+
+Keduanya hijau per commit ini (Python 3.12.10, Streamlit 1.63). ETL juga diuji: 9 file → DB dalam
+~35 detik, re-upload → 0 duplikat.
+
+---
+
+## Status & Batasan
+
+- **Safety Stock** ada untuk ~8.600 item; **~3.800 di antaranya nilainya beda antar sheet** →
+  kerjakan di **Safety Stock**. Item tanpa SS statusnya `NO_SAFETY_STOCK`, bukan 0.
+- **Sisa Stok** kosong untuk ~71% item → `UNKNOWN`, bukan 0. Skor kesehatan hanya menghitung item
+  yang datanya lengkap (biasanya tampil kecil di awal — itu jujur, bukan bug).
+- **Matching** ~55–58% otomatis. Sisanya: ~2.500 di **Cocokkan Barang** (ada kandidat) + sisanya
+  barang baru (buat master / biarkan).
+- Keputusan bisnis yang masih terbuka (rumus SS internal sheet, threshold, definisi status): semua
+  ditandai `[A-n]` di [`AUDIT/00_decisions.md`](AUDIT/00_decisions.md) — bisa diubah tanpa membuang kerja.
+- Belum ada: login/multi-user, Tanya STOCKWISE natural-language (sekarang preset).
+
+Audit sumber lengkap: [`AUDIT/`](AUDIT/) (`00` keputusan, `01` data dictionary, `02` ERD,
+`03` laporan ingest).
+
+---
+
+## Struktur Project
+
+```
+STOCKWISE/
+├── Home.py                      # entry point v2: router st.navigation
+├── app.py                       # dashboard lama v1 (tidak dikembangkan)
+├── pages/                       # halaman v2 (executive, inventory, ..., get_started)
+├── stockwise/                   # paket Python
+│   ├── config.py                #   path + parameter bisnis
+│   ├── db.py                    #   koneksi SQLite + read_df
+│   ├── textnorm.py              #   normalisasi (mirror .mjs)
+│   ├── calc.py                  #   calculation engine (mirror .mjs)
+│   ├── queries.py               #   semua query dashboard
+│   ├── ingest.py                #   panggil Node ETL untuk upload UI
+│   ├── report.py                #   export PDF
+│   └── ui.py                    #   chrome, KPI, badge, banner "Terapkan"
+├── tools/                       # ETL (Node) — butuh `npm install` di tools/
+│   ├── build_stockwise_db.mjs   #   bootstrap: DATAFIX/ → stockwise.db + laporan
+│   ├── ingest_batch.mjs         #   banyak file, auto-detect modul
+│   ├── ingest_one.mjs           #   satu file
+│   ├── smoke_test.py            #   tes query/calc (Python)
+│   ├── test_pages.py            #   tes render halaman (Python)
+│   └── lib/                     #   parser per modul, matcher, calc, dll
+├── db/schema.sql                # skema SQLite
+├── AUDIT/                       # 00 keputusan · 01 data dictionary · 02 ERD · 03 laporan ingest
+├── DATAFIX/                     # 9 workbook sumber (gitignore-kan bila besar)
+└── stockwise.db                 # dibuat saat build/upload (gitignore)
+```

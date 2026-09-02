@@ -198,3 +198,29 @@ def attention_strip():
     cols[0].caption("Perlu ditindaklanjuti:")
     for col, (label, page) in zip(cols[1:], bits):
         col.page_link(page, label=label)
+
+
+# ── deferred recalculation ────────────────────────────────────────────────
+def mark_dirty():
+    """Call after a change that needs a recalc (accepting a match, resolving SS)."""
+    st.session_state["calc_dirty"] = True
+
+
+def recalc_now(notes: str = "ui"):
+    from stockwise.calc import run_calc
+    r = run_calc(notes=notes)
+    st.session_state["calc_dirty"] = False
+    st.cache_data.clear()
+    return r
+
+
+def apply_changes_banner():
+    """Sticky prompt shown on dashboards when there are un-applied review changes."""
+    if not st.session_state.get("calc_dirty"):
+        return
+    c1, c2 = st.columns([4, 1])
+    c1.warning("Ada keputusan review yang belum diterapkan ke angka dashboard.")
+    if c2.button("↻ Terapkan sekarang", type="primary", width="stretch"):
+        with st.spinner("Menghitung ulang…"):
+            recalc_now("apply changes")
+        st.rerun()

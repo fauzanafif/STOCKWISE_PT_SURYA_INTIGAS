@@ -6,7 +6,7 @@ import streamlit as st
 
 from stockwise import queries
 from stockwise.db import connect
-from stockwise.ui import fmt_num, page_header, require_db
+from stockwise.ui import apply_changes_banner, fmt_num, mark_dirty, page_header, require_db
 
 
 def resolve_item(desc_norm: str, sheet: str, values: dict):
@@ -23,11 +23,13 @@ def resolve_item(desc_norm: str, sheet: str, values: dict):
         conn.commit()
     finally:
         conn.close()
+    mark_dirty()
 
 
 page_header("Safety Stock Review", "Barang dengan nilai SS / Lead Time berbeda antar sheet SAFETY STOCK. Pilih yang benar.", icon="🛡️")
 if not require_db():
     st.stop()
+apply_changes_banner()
 
 fp = queries.data_fingerprint()
 total = queries.scalar("SELECT COUNT(*) FROM safety_stock_params WHERE dq_flag='SS_CONFLICT'")
@@ -35,7 +37,7 @@ done = queries.scalar("SELECT COUNT(*) FROM safety_stock_params WHERE chosen_she
 c1, c2 = st.columns(2)
 c1.metric("Konflik belum diputus", f"{total:,}")
 c2.metric("Sudah diputus", f"{done:,}")
-st.caption("Setelah selesai, jalankan **Hitung ulang** di Data Management agar status & prioritas ikut.")
+st.caption("Setiap pilihan langsung disimpan. Tombol **↻ Terapkan** muncul di dashboard untuk hitung ulang.")
 
 if total == 0:
     st.success("Tidak ada konflik safety stock. 🎉")

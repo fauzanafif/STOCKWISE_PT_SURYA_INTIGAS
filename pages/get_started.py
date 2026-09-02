@@ -1,66 +1,48 @@
-"""Get Started — the one-time setup checklist. Auto-shown until the system is ready."""
+"""Mulai — panduan setup. Menonjolkan SATU langkah berikutnya, sisanya ringkas."""
 import streamlit as st
 
 from stockwise.ui import fmt_num, page_header, setup_status
 
-page_header("Get Started", "Langkah menyiapkan STOCKWISE. Ikuti dari atas ke bawah.", icon="🚀")
+page_header("Mulai", "Ikuti langkah yang disorot. Setelah selesai, halaman ini hilang otomatis.", icon="🚀")
 
 s = setup_status()
 
-if s["ready"] and s["ss_open"] == 0 and s["match_open"] == 0:
-    st.success("Semua langkah selesai — sistem siap dipakai.")
-    st.page_link("pages/executive.py", label="Buka Executive Dashboard", icon="📦")
-    st.stop()
+STEPS = [
+    ("Upload Master Inventory", "Upload `DATA.xlsx` — isi katalog barang + parameter safety stock.",
+     "pages/data_management.py", "Buka Kelola Data → Upload", s["has_master"]),
+    ("Upload data transaksi", "Upload 8 workbook lainnya (PPB-RI, NPBG, Tracking…). Bisa sekaligus, bisa dicicil.",
+     "pages/data_management.py", "Buka Kelola Data → Upload", s["has_tx"]),
+    ("Cocokkan barang", f"{fmt_num(s['match_open'])} barang transaksi belum pasti terhubung ke master. "
+     "Pakai 'Terima massal' untuk yang jelas, review sisanya. Bisa dicicil.",
+     "pages/matching_review.py", "Buka Cocokkan Barang", s["match_open"] == 0),
+    ("Beresi Safety Stock", f"{fmt_num(s['ss_open'])} barang punya nilai SS/Lead Time beda antar sheet. "
+     "Pilih sheet yang benar. Bisa dicicil — barang itu 'belum bisa dinilai' sampai diputuskan.",
+     "pages/safety_stock_review.py", "Buka Safety Stock", s["ss_open"] == 0),
+]
 
-st.progress(s["stage"] / 5, text=f"Langkah selesai: {s['stage']} / 5")
+done_count = sum(d for *_, d in STEPS)
+st.progress(done_count / len(STEPS), text=f"{done_count} dari {len(STEPS)} langkah beres")
 st.write("")
 
+next_idx = next((i for i, (*_, d) in enumerate(STEPS) if not d), None)
 
-def step(done: bool, title: str, body: str, link=None, link_label=None, warn=False):
-    icon = "✅" if done else ("⚠️" if warn else "⬜")
-    with st.container(border=True):
-        st.markdown(f"### {icon}  {title}")
-        st.markdown(body)
-        if link and not done:
-            st.page_link(link, label=link_label or "Buka", icon="➡️")
-
-
-step(
-    s["has_master"], "1 · Upload Master Inventory",
-    "Upload `DATA.xlsx` di **Data Management → Upload Center**, modul *Master Inventory*. "
-    "Ini isi katalog barang + parameter safety stock dari 13 sheet `SAFETY STOCK *`."
-    + ("" if not s["has_master"] else "  \nMaster sudah masuk."),
-    "pages/data_management.py", "Data Management",
-)
-step(
-    s["has_tx"], "2 · Upload data transaksi",
-    "Upload sisa 8 workbook (PPB-RI, NPBG, Tracking …), satu per modul. File kumulatif penuh — "
-    "duplikat dibuang otomatis. Bisa dicicil."
-    + ("" if not s["has_tx"] else "  \nData transaksi sudah ada."),
-    "pages/data_management.py", "Data Management",
-)
-step(
-    s["ss_open"] == 0, "3 · Beresi konflik Safety Stock",
-    f"**{fmt_num(s['ss_open'])}** barang punya nilai Safety Stock / Lead Time berbeda antar sheet. "
-    "Pilih sheet yang benar per barang. (Bisa dilewati dulu — barang itu statusnya "
-    "*belum bisa dinilai* sampai diputuskan.)",
-    "pages/safety_stock_review.py", "Safety Stock Review", warn=s["ss_open"] > 0,
-)
-step(
-    s["match_open"] == 0, "4 · Beresi Matching",
-    f"**{fmt_num(s['match_open'])}** barang transaksi belum pasti terhubung ke master. "
-    "Pakai *Terima massal* untuk yang confidence tinggi, review sisanya. (Bisa dicicil.)",
-    "pages/matching_review.py", "Matching Review", warn=s["match_open"] > 0,
-)
-step(
-    s["calc_done"], "5 · Hitung ulang",
-    "Setelah upload / review, tekan **♻️ Hitung ulang** di Data Management supaya status, defisit, "
-    "prioritas, dan projected stock ter-update.",
-    "pages/data_management.py", "Data Management",
-)
+for i, (title, body, page, label, done) in enumerate(STEPS):
+    if done:
+        st.markdown(f"✅ ~~**{i + 1}. {title}**~~")
+    elif i == next_idx:
+        with st.container(border=True):
+            st.markdown(f"### 👉 {i + 1}. {title}")
+            st.markdown(body)
+            st.page_link(page, label=label, icon="➡️")
+    else:
+        st.markdown(f"⬜ **{i + 1}. {title}** — {body.split('.')[0]}.")
 
 st.divider()
-st.caption(
-    "Belum punya file dan mau lihat dulu dengan data contoh? Jalankan di terminal: "
-    "`node --experimental-sqlite tools/build_stockwise_db.mjs` — mengisi dari folder `DATAFIX/`."
-)
+if next_idx is None:
+    st.success("Semua langkah beres. Sistem siap.")
+    st.page_link("pages/executive.py", label="Buka Dashboard", icon="📊")
+else:
+    st.caption(
+        "Tidak punya file dan mau lihat dulu pakai data contoh? Di terminal jalankan "
+        "`node --experimental-sqlite tools/build_stockwise_db.mjs` (mengisi dari folder `DATAFIX/`)."
+    )

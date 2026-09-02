@@ -8,8 +8,8 @@ Workflows:
 import streamlit as st
 
 from stockwise import queries
-from stockwise.db import connect, scalar
-from stockwise.ui import page_header, require_db
+from stockwise.db import connect
+from stockwise.ui import apply_changes_banner, mark_dirty, page_header, recalc_now, require_db
 
 TX_TABLES = {
     "ppb_lines": "deskripsi", "ppb_changes": "deskripsi", "ri_lines": "deskripsi",
@@ -33,6 +33,7 @@ def accept_one(table, row_id, item_id, review_id):
         conn.commit()
     finally:
         conn.close()
+    mark_dirty()
 
 
 def bulk_accept(table, min_conf):
@@ -68,6 +69,7 @@ def create_master_from(table, row_id, desc):
             "UPDATE matching_reviews SET decision='NEW_ITEM', decided_by='user', decided_at=datetime('now') "
             "WHERE source_table=? AND source_row_id=? AND decision='PENDING'", (table, row_id))
         conn.commit()
+        mark_dirty()
         return new_id
     finally:
         conn.close()
@@ -76,12 +78,13 @@ def create_master_from(table, row_id, desc):
 page_header("Matching Review", "Hubungkan barang transaksi ke master. Keputusan Anda disimpan.", icon="🤝")
 if not require_db():
     st.stop()
+apply_changes_banner()
 
 stats = queries.matching_stats()
 c1, c2 = st.columns(2)
 c1.metric("Baris dengan kandidat — menunggu", f"{stats['pending']:,}")
 c2.metric("Barang belum dikenal (NEW_ITEM)", f"{int(stats['new_items']['n'].sum()):,}")
-st.caption("Selesai review → **Data Management → Hitung ulang** supaya angka dashboard ikut.")
+st.caption("Setiap keputusan langsung disimpan. Tombol **↻ Terapkan** muncul di dashboard untuk hitung ulang.")
 
 with st.sidebar:
     st.header("Filter antrian")
@@ -92,8 +95,10 @@ with st.sidebar:
     st.subheader("Terima massal")
     thr = st.slider("Terima semua kandidat teratas dengan confidence ≥", 0.75, 1.0, 0.98, 0.01)
     if st.button(f"Terima {('semua tabel' if not tbl else tbl)} ≥ {thr:.2f}", type="primary"):
-        n = bulk_accept(tbl, thr)
-        st.success(f"{n} baris di-match.")
+        with st.spinner("Mencocokkan & menghitung ulang…"):
+            n = bulk_accept(tbl, thr)
+            recalc_now("bulk match")
+        st.success(f"{n} baris di-match & dashboard sudah diperbarui.")
         st.rerun()
 
 tab_q, tab_new = st.tabs(["🔗 Antrian kandidat", "🆕 Barang belum dikenal"])
@@ -142,4 +147,4 @@ with tab_new:
         if st.button("Buat master item"):
             rid = int(df.loc[df["deskripsi"] == pick, "id"].iloc[0])
             nid = create_master_from(tsel, rid, pick)
-            st.success(f"Dibuat {nid} — dan semua baris dengan deskripsi sama akan ikut ter-match saat Hitung ulang.")
+            st.success(f"Dibuat {nid}. Baris lain dengan deskripsi sama ikut ter-match saat berikutnya diproses/dihitung ulang.")

@@ -2,11 +2,12 @@
 import streamlit as st
 
 from stockwise import queries
-from stockwise.ui import fmt_num, page_header, require_db
+from stockwise.ui import apply_changes_banner, fmt_num, page_header, require_db
 
 page_header("Procurement", "Barang yang perlu dibeli, diurutkan mendesak — plus status PPB / PO / RI.", icon="🚚")
 if not require_db():
     st.stop()
+apply_changes_banner()
 
 fp = queries.data_fingerprint()
 tab1, tab2 = st.tabs(["🎯 Priority Buy List", "📋 Status PPB → PO → RI"])

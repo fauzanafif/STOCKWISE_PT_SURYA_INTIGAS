@@ -3,11 +3,12 @@ import plotly.express as px
 import streamlit as st
 
 from stockwise import queries
-from stockwise.ui import fmt_num, page_header, require_db
+from stockwise.ui import apply_changes_banner, fmt_num, page_header, require_db
 
 page_header("Usage Analysis", "Pemakaian barang berdasarkan NPBG — apa yang keluar, oleh siapa, untuk apa.", icon="📉")
 if not require_db():
     st.stop()
+apply_changes_banner()
 
 
 @st.cache_data(show_spinner=False)

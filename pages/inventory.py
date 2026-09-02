@@ -4,11 +4,12 @@ import streamlit as st
 
 from stockwise import queries
 from stockwise.config import STATUS_COLORS, STATUS_LABELS
-from stockwise.ui import fmt_num, page_header, require_db
+from stockwise.ui import apply_changes_banner, fmt_num, page_header, require_db
 
 page_header("Inventory", "Sisa stok tiap barang, status, defisit, dan prioritas. Klik baris untuk detail 360°.", icon="📋")
 if not require_db():
     st.stop()
+apply_changes_banner()
 
 
 @st.cache_data(show_spinner=False)

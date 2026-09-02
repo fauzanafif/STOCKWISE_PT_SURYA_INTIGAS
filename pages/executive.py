@@ -4,11 +4,12 @@ import streamlit as st
 
 from stockwise import queries
 from stockwise.config import STATUS_COLORS, STATUS_LABELS
-from stockwise.ui import attention_strip, fmt_num, kpi_grid, page_header, require_db, section
+from stockwise.ui import apply_changes_banner, attention_strip, fmt_num, kpi_grid, page_header, require_db, section
 
 page_header("Executive Dashboard", "Kondisi inventory, risiko, dan procurement — satu layar.", icon="📦")
 if not require_db():
     st.stop()
+apply_changes_banner()
 attention_strip()
 
 
