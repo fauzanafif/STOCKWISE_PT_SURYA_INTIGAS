@@ -24,15 +24,22 @@ def _table(fp, status, kategori, gudang, search, only_critical):
 fp = queries.data_fingerprint()
 opts = _opts(fp)
 
+_QUICK = ["Semua", "Tidak Aman", "Stok Habis", "Critical", "BEP", "Belum ada SS", "Stok belum terdata"]
+_FROM_STATUS = {
+    "TIDAK_AMAN": "Tidak Aman", "OUT_OF_STOCK": "Stok Habis", "BEP": "BEP",
+    "NO_SAFETY_STOCK": "Belum ada SS", "UNKNOWN": "Stok belum terdata",
+}
+_default_view = _FROM_STATUS.get(st.session_state.pop("inv_filter_status", None), "Semua")
+
 with st.sidebar:
     st.header("Filter")
-    view = st.radio("Tampilan cepat", ["Semua", "Tidak Aman", "Stok Habis", "Critical", "Belum ada SS", "Stok belum terdata"], index=0)
+    view = st.radio("Tampilan cepat", _QUICK, index=_QUICK.index(_default_view))
     kategori = st.multiselect("Kategori Induk", opts["kategori"])
     gudang = st.multiselect("Letak Gudang", opts["gudang"])
     search = st.text_input("Cari kode / deskripsi")
 
 status_map = {
-    "Semua": [], "Tidak Aman": ["TIDAK_AMAN"], "Stok Habis": ["OUT_OF_STOCK"],
+    "Semua": [], "Tidak Aman": ["TIDAK_AMAN"], "Stok Habis": ["OUT_OF_STOCK"], "BEP": ["BEP"],
     "Belum ada SS": ["NO_SAFETY_STOCK"], "Stok belum terdata": ["UNKNOWN"],
 }
 only_critical = view == "Critical"

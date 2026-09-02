@@ -112,13 +112,31 @@ CREATE TABLE IF NOT EXISTS safety_stock_params (
     avg_3_bln           REAL,
     avg_6_bln           REAL,
     avg_12_bln          REAL,
-    source_sheet        TEXT,
+    source_sheet        TEXT,                      -- sheet the chosen values came from
     dq_flag             TEXT,                      -- SS_CONFLICT
+    chosen_sheet        TEXT,                      -- set when a human picks an authoritative sheet
+    resolved_by         TEXT,
+    resolved_at         TEXT,
     source_file         TEXT, source_row INTEGER,
     upload_batch_id     INTEGER REFERENCES upload_batches(id),
     UNIQUE(item_desc_norm)
 );
 CREATE INDEX IF NOT EXISTS ix_ssp_master ON safety_stock_params(master_item_id);
+CREATE INDEX IF NOT EXISTS ix_ssp_conflict ON safety_stock_params(dq_flag);
+
+-- every per-sheet value for an item, so a conflict can be reviewed side by side
+CREATE TABLE IF NOT EXISTS safety_stock_variants (
+    id              INTEGER PRIMARY KEY,
+    item_desc_norm  TEXT NOT NULL,
+    source_sheet    TEXT NOT NULL,
+    lead_time_days  REAL,
+    sqrt_lt         REAL,
+    safety_stock    REAL,
+    min_pr          REAL,
+    avg_12_bln      REAL,
+    UNIQUE(item_desc_norm, source_sheet)
+);
+CREATE INDEX IF NOT EXISTS ix_ssv_desc ON safety_stock_variants(item_desc_norm);
 
 -- Pre-aggregated monthly usage from the 13 SAFETY STOCK sheets (A-1): one row
 -- per (item, month) — the sheets are near-mirrors, so first non-null wins.

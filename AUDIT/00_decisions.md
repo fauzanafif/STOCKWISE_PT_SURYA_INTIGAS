@@ -24,8 +24,11 @@ Prinsip yang dipegang:
 (tidak ada Kode Barang di sheet itu).
 
 - 13 sheet diperlakukan sebagai **satu tabel logis** `safety_stock_params` (kolom `source_sheet` disimpan).
-- Bila 1 deskripsi-normal muncul di >1 sheet dengan nilai berbeda → ambil baris paling lengkap
-  (prioritas: `12 BLN` terisi > `SS` terisi > `LT` terisi), sisanya dicatat `dq_flag = SS_CONFLICT`.
+- Bila 1 deskripsi-normal muncul di >1 sheet dengan **SS atau LT berbeda** → baris paling lengkap
+  dipakai sebagai default (`dq_flag = SS_CONFLICT`), dan **semua varian per-sheet disimpan di
+  `safety_stock_variants`**. Halaman **Safety Stock Review** menampilkan varian bersebelahan; user
+  memilih sheet yang benar → `safety_stock_params` di-update + `chosen_sheet`/`resolved_by` diisi +
+  `dq_flag` dihapus. Lalu **Hitung ulang** di Data Management.
 - Master item tanpa baris safety-stock → `safety_stock = NULL`, `lead_time_days = NULL`.
   Di UI ditampilkan **"SS belum tersedia"**, tidak pernah diperlakukan `0`.
 - Kolom bulanan `Agt..Juli` → tabel `monthly_consumption` (per deskripsi, period = bulan).

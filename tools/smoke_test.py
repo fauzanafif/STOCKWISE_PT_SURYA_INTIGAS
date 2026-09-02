@@ -52,7 +52,12 @@ def main():
     check("tracking_counts", queries.tracking_counts)
     check("upload_history", queries.upload_history)
     check("matching_queue", queries.matching_queue)
+    check("matching_stats", queries.matching_stats)
     check("data_quality", queries.data_quality)
+    check("ss_conflicts", queries.ss_conflicts)
+    conf = queries.ss_conflicts(limit=1)
+    if len(conf):
+        check("ss_variants", lambda: queries.ss_variants(conf.iloc[0]["item_desc_norm"]))
 
     row = db.fetch_one("SELECT id FROM master_items WHERE kode_barang IS NOT NULL LIMIT 1")
     check("item_detail", lambda: queries.item_detail(row["id"]))

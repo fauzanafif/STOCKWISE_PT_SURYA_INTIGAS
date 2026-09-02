@@ -1,4 +1,4 @@
-# STOCKWISE — Laporan Ingest (2026-09-02 02:57)
+# STOCKWISE — Laporan Ingest (2026-09-02 03:11)
 
 Dibuat oleh `tools/build_stockwise_db.mjs` dari `DATAFIX/`. Sumber kebenaran = Excel; `stockwise.db` = layer normalized.
 
@@ -33,7 +33,7 @@ Dibuat oleh `tools/build_stockwise_db.mjs` dari `DATAFIX/`. Sumber kebenaran = E
 | Modul | File | Total | Insert | Duplikat | Need review | Status |
 |---|---|--:|--:|--:|--:|---|
 | master | DATA.xlsx | 8964 | 8964 | 0 | 0 | OK |
-| safety_stock | DATA.xlsx | 81483 | 8736 | 0 | 13154 | OK |
+| safety_stock | DATA.xlsx | 81483 | 8736 | 0 | 3824 | OK |
 | ppb:PPB | 1. PPB - RI.xlsx | 11237 | 3716 | 57 | 0 | OK |
 | ri:RI | 1. PPB - RI.xlsx | 8114 | 8005 | 109 | 0 | OK |
 | ppb:PPB Perubahan | 1. PPB - RI.xlsx | 4985 | 193 | 5 | 0 | OK |
@@ -89,7 +89,7 @@ Antrian review (`matching_reviews.decision = 'PENDING'`): **2.558** baris transa
 - master `DESC_MASS_DUPLICATE`: 126
 - master `KODE_DUPLICATE`: 12
 - master `KODE_MISSING`: 1
-- safety_stock_params SS_CONFLICT: 6211
+- safety_stock_params SS_CONFLICT: 3824
 - used_returns qty negatif: 46
 - import_errors: 1 (lihat tabel `import_errors`)
 
@@ -97,7 +97,7 @@ Antrian review (`matching_reviews.decision = 'PENDING'`): **2.558** baris transa
 
 - **master** (file): master sheet = "DATABASE UTAMA"; sheets skipped: Sheet6, cetak, Sheet2
 - **master** (column): Nama Alias: 2361 nilai di-drop (isinya "Ya"/"Tidak", bukan alias)
-- **safety_stock** (file): 12 sheet SAFETY STOCK diproses; 8736 deskripsi unik disimpan; 13154 konflik nilai antar-sheet (dq_flag=SS_CONFLICT); 75482 baris monthly_consumption
+- **safety_stock** (file): 12 sheet SAFETY STOCK diproses; 8736 deskripsi unik; 3824 deskripsi dengan SS/LT beda antar-sheet (dq_flag=SS_CONFLICT, semua varian di safety_stock_variants); 75482 baris monthly_consumption
 - **npbg** (file): sheet dilewati: Export List_Klasifikasi, Dropdown List
 - **borrow_lend:Lend** (sheet): 3797 baris kosong dilewati
 - **borrow_lend:Borrow** (sheet): 4135 baris kosong dilewati

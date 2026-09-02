@@ -19,11 +19,13 @@ master_data = st.Page("pages/master_data.py", title="Master Data", icon="🗂️
 item_detail = st.Page("pages/item_detail.py", title="Item Detail", icon="🔍")
 data_management = st.Page("pages/data_management.py", title="Data Management", icon="🗄️")
 matching_review = st.Page("pages/matching_review.py", title="Matching Review", icon="🤝")
+ss_review = st.Page("pages/safety_stock_review.py", title="Safety Stock Review", icon="🛡️")
 ask = st.Page("pages/ask.py", title="Ask STOCKWISE", icon="💬")
 
 nav = st.navigation({
     "Ringkasan": [executive, ask],
     "Operasional": [inventory, procurement, usage, tracking],
-    "Data & Referensi": [master_data, item_detail, matching_review, data_management],
+    "Data & Referensi": [master_data, item_detail],
+    "Review & Kualitas": [matching_review, ss_review, data_management],
 })
 nav.run()

@@ -208,16 +208,58 @@ def upload_history() -> pd.DataFrame:
         "FROM upload_batches ORDER BY id DESC")
 
 
-def matching_queue(limit: int = 200) -> pd.DataFrame:
+def matching_queue(limit: int = 200, table: str | None = None, min_conf: float = 0.0) -> pd.DataFrame:
+    where = ["mr.decision = 'PENDING'", "mr.candidate_item_id IS NOT NULL", "mr.confidence >= ?"]
+    params: list = [min_conf]
+    if table:
+        where.append("mr.source_table = ?")
+        params.append(table)
+    params.append(limit)
+    return read_df(
+        f"""
+        SELECT mr.id, mr.source_table, mr.source_row_id, mr.source_desc,
+               mr.candidate_item_id, mr.candidate_desc, mr.confidence, mr.method, mr.decision
+        FROM matching_reviews mr
+        WHERE {' AND '.join(where)}
+        ORDER BY mr.confidence DESC, mr.source_row_id
+        LIMIT ?
+        """, tuple(params))
+
+
+def matching_stats() -> dict:
+    pending = scalar(
+        "SELECT COUNT(DISTINCT source_table||source_row_id) FROM matching_reviews WHERE decision='PENDING' AND candidate_item_id IS NOT NULL")
+    tables = [r for r in read_df(
+        "SELECT DISTINCT source_table t FROM matching_reviews WHERE decision='PENDING'")["t"]]
+    new_items = read_df(
+        """SELECT 'ppb_lines' t, COUNT(*) n FROM ppb_lines WHERE match_status='NEW_ITEM'
+           UNION ALL SELECT 'ri_lines', COUNT(*) FROM ri_lines WHERE match_status='NEW_ITEM'
+           UNION ALL SELECT 'npbg_lines', COUNT(*) FROM npbg_lines WHERE match_status='NEW_ITEM'
+           UNION ALL SELECT 'borrow_lend', COUNT(*) FROM borrow_lend WHERE match_status='NEW_ITEM'
+           UNION ALL SELECT 'stpp', COUNT(*) FROM stpp WHERE match_status='NEW_ITEM'
+           UNION ALL SELECT 'manufacturing', COUNT(*) FROM manufacturing WHERE match_status='NEW_ITEM'
+           UNION ALL SELECT 'used_returns', COUNT(*) FROM used_returns WHERE match_status='NEW_ITEM'""")
+    return {"pending": pending or 0, "tables": tables, "new_items": new_items}
+
+
+def ss_conflicts(limit: int = 300) -> pd.DataFrame:
     return read_df(
         """
-        SELECT id, source_table, source_row_id, source_desc, candidate_item_id, candidate_desc,
-               confidence, method, decision
-        FROM matching_reviews
-        WHERE decision = 'PENDING'
-        ORDER BY confidence DESC
+        SELECT p.item_desc_norm, p.master_item_id, m.kode_barang, m.deskripsi,
+               p.safety_stock chosen_ss, p.lead_time_days chosen_lt, p.source_sheet chosen_sheet,
+               p.chosen_sheet resolved_sheet, p.resolved_by
+        FROM safety_stock_params p
+        LEFT JOIN master_items m ON m.id = p.master_item_id
+        WHERE p.dq_flag = 'SS_CONFLICT'
+        ORDER BY (p.resolved_by IS NOT NULL), p.item_desc_norm
         LIMIT ?
         """, (limit,))
+
+
+def ss_variants(item_desc_norm: str) -> pd.DataFrame:
+    return read_df(
+        "SELECT source_sheet, safety_stock, lead_time_days, sqrt_lt, min_pr, avg_12_bln "
+        "FROM safety_stock_variants WHERE item_desc_norm = ? ORDER BY source_sheet", (item_desc_norm,))
 
 
 def data_quality() -> dict:

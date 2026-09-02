@@ -144,9 +144,10 @@ export function ingestMaster(db, file) {
 function ingestSafetyStock(db, wb, file, fname, mtime) {
   const sheets = wb.SheetNames.filter((s) => s.toLowerCase().startsWith('safety stock'));
   const batchId = newBatch(db, { filename: fname, module: 'safety_stock', source_mtime: mtime });
-  let rowsSeen = 0, kept = 0, conflicts = 0, monthly = 0;
+  let rowsSeen = 0, kept = 0, monthly = 0;
   const best = new Map();       // desc_norm -> {rec, score}
   const monthAgg = new Map();   // `${desc_norm}|${month}` -> {qty, sheet}
+  const variants = new Map();   // `${desc_norm}|${sheet}` -> {lead_time_days, sqrt_lt, safety_stock, min_pr, avg_12_bln}
 
   for (const sheet of sheets) {
     const raw = sheetRows(wb, sheet);
@@ -184,14 +185,16 @@ function ingestSafetyStock(db, wb, file, fname, mtime) {
         avg_12_bln: avgCols['12_bln'] >= 0 ? parseNum(r[avgCols['12_bln']]) : null,
         source_sheet: sheet, source_file: fname, source_row: i + 3, upload_batch_id: batchId,
       };
+      const vkey = dn + '|' + sheet;
+      if (!variants.has(vkey)) variants.set(vkey, {
+        item_desc_norm: dn, source_sheet: sheet,
+        lead_time_days: rec.lead_time_days, sqrt_lt: rec.sqrt_lt,
+        safety_stock: rec.safety_stock, min_pr: rec.min_pr, avg_12_bln: rec.avg_12_bln,
+      });
       const score = (rec.avg_12_bln != null ? 4 : 0) + (rec.safety_stock != null ? 2 : 0) + (rec.lead_time_days != null ? 1 : 0);
       const prev = best.get(dn);
       if (!prev) best.set(dn, { rec, score });
-      else {
-        const differ = prev.rec.safety_stock !== rec.safety_stock || prev.rec.lead_time_days !== rec.lead_time_days;
-        if (differ) { conflicts++; prev.rec.dq_flag = 'SS_CONFLICT'; }
-        if (score > prev.score) best.set(dn, { rec: { ...rec, dq_flag: 'SS_CONFLICT' }, score });
-      }
+      else if (score > prev.score) best.set(dn, { rec, score });
       // monthly consumption: one row per (desc, month) — first non-null wins
       for (const [m, ci] of Object.entries(monthCols)) {
         const q = parseNum(r[ci]);
@@ -201,10 +204,25 @@ function ingestSafetyStock(db, wb, file, fname, mtime) {
       }
     }
   }
+  // per-sheet variants + flag descriptions whose SS or LT actually disagree
+  const byDesc = new Map();
+  for (const v of variants.values()) {
+    if (!byDesc.has(v.item_desc_norm)) byDesc.set(v.item_desc_norm, []);
+    byDesc.get(v.item_desc_norm).push(v);
+  }
+  const conflicted = new Set();
+  for (const [dn, vs] of byDesc) {
+    const ss = new Set(vs.map((x) => x.safety_stock).filter((x) => x != null));
+    const lt = new Set(vs.map((x) => x.lead_time_days).filter((x) => x != null));
+    if (ss.size > 1 || lt.size > 1) conflicted.add(dn);
+  }
+
   db.exec('BEGIN');
-  for (const { rec } of best.values()) {
+  for (const [dn, { rec }] of best) {
+    if (conflicted.has(dn)) rec.dq_flag = 'SS_CONFLICT';
     try { insert(db, 'safety_stock_params', rec); kept++; } catch { /* dup desc_norm */ }
   }
+  for (const v of variants.values()) insert(db, 'safety_stock_variants', v);
   for (const [key, v] of monthAgg) {
     const [dn, m] = key.split('|');
     insert(db, 'monthly_consumption', {
@@ -214,6 +232,7 @@ function ingestSafetyStock(db, wb, file, fname, mtime) {
     monthly++;
   }
   db.exec('COMMIT');
-  note(db, batchId, 'file', `${sheets.length} sheet SAFETY STOCK diproses; ${kept} deskripsi unik disimpan; ${conflicts} konflik nilai antar-sheet (dq_flag=SS_CONFLICT); ${monthly} baris monthly_consumption`);
+  const conflicts = conflicted.size;
+  note(db, batchId, 'file', `${sheets.length} sheet SAFETY STOCK diproses; ${kept} deskripsi unik; ${conflicts} deskripsi dengan SS/LT beda antar-sheet (dq_flag=SS_CONFLICT, semua varian di safety_stock_variants); ${monthly} baris monthly_consumption`);
   finishBatch(db, batchId, { total: rowsSeen, inserted: kept, need_review: conflicts, status: 'OK' });
 }

@@ -42,6 +42,16 @@ kpi_grid([
      f"AMAN / {fmt_num(k['assessable'])} item yang bisa dinilai", STATUS_COLORS["AMAN"]),
 ])
 
+jump = st.columns(5)
+_targets = [
+    ("🔴 Tidak Aman", "TIDAK_AMAN"), ("⛔ Stok Habis", "OUT_OF_STOCK"),
+    ("🟣 BEP", "BEP"), ("🟠 Belum ada SS", "NO_SAFETY_STOCK"), ("⚪ Stok belum terdata", "UNKNOWN"),
+]
+for col, (label, status) in zip(jump, _targets):
+    if col.button(label, use_container_width=True):
+        st.session_state["inv_filter_status"] = status
+        st.switch_page("pages/inventory.py")
+
 if (k["ss_known"] or 0) < (k["total_item"] or 1) * 0.5:
     st.info(
         f"⚠️ Safety Stock baru tersedia untuk **{fmt_num(k['ss_known'])} dari {fmt_num(k['total_item'])}** item. "
