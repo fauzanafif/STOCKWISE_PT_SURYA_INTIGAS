@@ -85,7 +85,7 @@ def inventory_table(status: list[str] | None = None, kategori: list[str] | None 
         SELECT id, kode_barang, deskripsi, kategori_induk, kategori_anak_1,
                uom, letak_gudang, letak_rak,
                sisa_stok, sisa_stok_known, safety_stock, safety_stock_known,
-               selisih, defisit, stock_status, is_critical,
+               lead_time_days, selisih, defisit, stock_status, is_critical,
                priority_score, priority_level, rekomendasi,
                incoming_qty, projected_stock, avg_monthly_usage, dq_flags
         FROM v_inventory

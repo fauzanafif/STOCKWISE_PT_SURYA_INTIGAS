@@ -25,9 +25,16 @@ with tab1:
                      "priority_score", "priority_level", "rekomendasi"]].copy()
         show.columns = ["Kode", "Deskripsi", "Gudang", "Sisa", "Safety", "Defisit", "Lead Time",
                         "Incoming", "Projected", "Score", "Priority", "Rekomendasi"]
-        st.dataframe(show, use_container_width=True, hide_index=True,
-                     column_config={"Score": st.column_config.NumberColumn(format="%.1f")})
-        st.caption("Incoming = qty PPB belum-final dikurangi RI yang sudah masuk untuk barang itu (perkiraan — lihat AUDIT/00_decisions.md [A-17]).")
+        ev = st.dataframe(show, use_container_width=True, hide_index=True, on_select="rerun",
+                          selection_mode="single-row",
+                          column_config={"Score": st.column_config.NumberColumn(format="%.1f")})
+        rows = ev["selection"]["rows"] if isinstance(ev, dict) else ev.selection.rows
+        if rows:
+            st.session_state["detail_item_id"] = prio.iloc[rows[0]]["id"]
+            st.switch_page("pages/item_detail.py")
+        st.caption("Klik baris → detail 360°. Incoming = qty PPB belum-final − RI yang sudah masuk (perkiraan, [A-17]).")
+        st.download_button("⬇️ CSV", show.to_csv(index=False).encode("utf-8-sig"),
+                           "procurement_priority.csv", "text/csv")
 
 with tab2:
     df = queries.ppb_ri_status()

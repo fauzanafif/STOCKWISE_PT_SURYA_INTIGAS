@@ -314,6 +314,15 @@ Logika normalisasi & kalkulasi dicerminkan di `stockwise/textnorm.py` & `stockwi
 | Matching Review | terima/tolak match barang transaksi ↔ master (fuzzy tidak pernah otomatis) |
 | Ask STOCKWISE | jawaban cepat untuk pertanyaan manajemen yang sering muncul |
 
+### Tes
+
+```bash
+python tools/smoke_test.py     # semua query + calc engine terhadap stockwise.db asli
+python tools/test_pages.py      # render tiap halaman Streamlit headless, tangkap exception
+```
+
+Keduanya hijau per commit ini (Python 3.12, Streamlit 1.63; `requirements.txt` minta `>=1.36`).
+
 ### Status & batasan (per bootstrap pertama)
 
 - **Safety Stock** hanya tersedia untuk ~8.600 item (sumber: 13 sheet `SAFETY STOCK *`), dan **6.211

@@ -1,11 +1,12 @@
 """Inventory — the full item list with stock status, filters, and drill-in."""
+import plotly.express as px
 import streamlit as st
 
 from stockwise import queries
-from stockwise.config import STATUS_LABELS
+from stockwise.config import STATUS_COLORS, STATUS_LABELS
 from stockwise.ui import fmt_num, page_header, require_db
 
-page_header("Inventory", "Sisa stok tiap barang, status, defisit, dan prioritas. Klik baris untuk detail 360°.", icon="📦")
+page_header("Inventory", "Sisa stok tiap barang, status, defisit, dan prioritas. Klik baris untuk detail 360°.", icon="📋")
 if not require_db():
     st.stop()
 
@@ -44,6 +45,18 @@ if df.empty:
     st.info("Tidak ada item yang cocok dengan filter.")
     st.stop()
 
+if len(df) > 1 and df["kategori_induk"].notna().any():
+    by_cat = (df.assign(n=1).groupby(["kategori_induk", "stock_status"], dropna=True)["n"].sum().reset_index())
+    by_cat["Status"] = by_cat["stock_status"].map(lambda s: STATUS_LABELS.get(s, s))
+    fig = px.bar(by_cat, x="n", y="kategori_induk", color="Status", orientation="h",
+                 color_discrete_map={STATUS_LABELS[k]: v for k, v in STATUS_COLORS.items()})
+    fig.update_layout(height=max(220, 26 * by_cat["kategori_induk"].nunique()),
+                      margin=dict(l=6, r=6, t=6, b=6), barmode="stack",
+                      xaxis_title="Item", yaxis_title="", legend_title="",
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    with st.expander("Grafik per kategori", expanded=False):
+        st.plotly_chart(fig, use_container_width=True)
+
 view_df = df.copy()
 view_df["stock_status"] = view_df["stock_status"].map(lambda s: STATUS_LABELS.get(s, s))
 view_df["Sisa"] = df.apply(lambda r: "belum terdata" if not r["sisa_stok_known"] else fmt_num(r["sisa_stok"]), axis=1)
@@ -63,7 +76,7 @@ sel = event.get("selection", {}).get("rows", []) if isinstance(event, dict) else
 if sel:
     item_id = df.iloc[sel[0]]["id"]
     st.session_state["detail_item_id"] = item_id
-    st.switch_page("pages/6_🔍_Item_Detail.py")
+    st.switch_page("pages/item_detail.py")
 
 st.download_button("⬇️ Download CSV (sesuai filter)", df.to_csv(index=False).encode("utf-8-sig"),
                    file_name="stockwise_inventory.csv", mime="text/csv")

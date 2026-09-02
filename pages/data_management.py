@@ -43,6 +43,14 @@ with tab_up:
                 st.code(res.get("stderr") or res.get("stdout") or "no output")
 
     st.divider()
+    cc1, cc2 = st.columns(2)
+    with cc1:
+        if st.button("♻️ Hitung ulang (setelah Matching Review)"):
+            from stockwise.calc import run_calc
+            with st.spinner("Menghitung ulang status & prioritas…"):
+                r = run_calc(notes="manual recalculate")
+            st.success(f"Selesai — calc run #{r['run_id']}, {r['items']:,} item.")
+
     with st.expander("Rebuild penuh dari folder DATAFIX/ (hapus & isi ulang stockwise.db)"):
         st.caption("Dipakai untuk bootstrap awal atau reset. Semua keputusan matching manual akan hilang.")
         if st.button("Rebuild sekarang"):
@@ -65,7 +73,7 @@ with tab_dq:
     c[1].metric("Item tanpa Sisa Stok", fmt_num(dq["no_stock"]))
     pend = queries.scalar("SELECT COUNT(DISTINCT source_table || source_row_id) FROM matching_reviews WHERE decision='PENDING'")
     c[2].metric("Baris transaksi perlu match", fmt_num(pend))
-    st.page_link("pages/8_🤝_Matching_Review.py", label="→ Buka Matching Review", icon="🤝")
+    st.page_link("pages/matching_review.py", label="→ Buka Matching Review", icon="🤝")
 
     st.markdown("#### Barang transaksi belum ter-match")
     st.dataframe(dq["unmatched"], use_container_width=True, hide_index=True)

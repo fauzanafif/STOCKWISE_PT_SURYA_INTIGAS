@@ -35,13 +35,18 @@ pending_total = queries.scalar(
 st.metric("Baris menunggu keputusan", f"{pending_total:,}")
 st.caption("Setelah menyelesaikan review, jalankan ulang kalkulasi di Data Management agar angka dashboard ikut.")
 
-q = queries.matching_queue(limit=300)
+q = queries.matching_queue(limit=1500)
 if q.empty:
     st.success("Tidak ada yang perlu direview. 🎉")
     st.stop()
 
-groups = q.groupby(["source_table", "source_row_id", "source_desc"], dropna=False)
-st.caption(f"Menampilkan {groups.ngroups} baris (maks 300, confidence tertinggi dulu).")
+all_groups = list(q.groupby(["source_table", "source_row_id", "source_desc"], dropna=False))
+PER_PAGE = 25
+n_pages = (len(all_groups) + PER_PAGE - 1) // PER_PAGE
+c1, c2 = st.columns([3, 1])
+c1.caption(f"{len(all_groups)} baris dengan kandidat (confidence tertinggi dulu).")
+pg = c2.number_input("Halaman", 1, max(n_pages, 1), 1) - 1
+groups = all_groups[pg * PER_PAGE:(pg + 1) * PER_PAGE]
 
 for (table, row_id, src_desc), grp in groups:
     with st.container(border=True):

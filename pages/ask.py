@@ -35,14 +35,14 @@ if kind == "overview":
         f"- Skor kesehatan: **{k['stock_health']}%** (dari {fmt_num(k['ss_known'])} item yang punya Safety Stock)\n"
         f"- Item belum ada Safety Stock: **{fmt_num(k['no_ss'])}** · sisa stok belum terdata: **{fmt_num(k['unknown_stok'])}**"
     )
-    st.page_link("Home.py", label="→ Executive Dashboard", icon="📦")
+    st.page_link("pages/executive.py", label="→ Executive Dashboard", icon="📦")
 
 elif kind == "out_of_stock":
     df = queries.inventory_table(status=["OUT_OF_STOCK"])
     st.markdown(f"**{len(df)}** barang stoknya 0 (dan punya safety stock > 0):")
     st.dataframe(df[["kode_barang", "deskripsi", "safety_stock", "lead_time_days", "priority_level"]],
                  use_container_width=True, hide_index=True)
-    st.page_link("pages/1_📦_Inventory.py", label="→ Inventory (filter Stok Habis)", icon="📦")
+    st.page_link("pages/inventory.py", label="→ Inventory (filter Stok Habis)", icon="📋")
 
 elif kind == "unsafe":
     df = queries.procurement_priority()
@@ -50,12 +50,12 @@ elif kind == "unsafe":
     st.dataframe(df[["kode_barang", "deskripsi", "sisa_stok", "safety_stock", "defisit",
                      "incoming_qty", "projected_stock", "priority_level", "rekomendasi"]].head(100),
                  use_container_width=True, hide_index=True)
-    st.page_link("pages/2_🚚_Procurement.py", label="→ Procurement", icon="🚚")
+    st.page_link("pages/procurement.py", label="→ Procurement", icon="🚚")
 
 elif kind == "top_usage":
     df = queries.usage_summary()["top_items"]
     st.dataframe(df, use_container_width=True, hide_index=True)
-    st.page_link("pages/3_📉_Usage_Analysis.py", label="→ Usage Analysis", icon="📉")
+    st.page_link("pages/usage.py", label="→ Usage Analysis", icon="📉")
 
 elif kind == "by_divisi":
     df = queries.usage_summary()["by_divisi"]

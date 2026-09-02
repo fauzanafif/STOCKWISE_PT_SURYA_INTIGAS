@@ -12,11 +12,17 @@ if not require_db():
 
 item_id = st.session_state.get("detail_item_id")
 
+@st.cache_data(show_spinner=False)
+def _item_options(fp):
+    return queries.read_df(
+        "SELECT id, COALESCE(kode_barang,'(no kode)') || ' — ' || deskripsi AS label "
+        "FROM master_items ORDER BY deskripsi")
+
+
 # allow direct lookup
 with st.sidebar:
     st.header("Cari barang")
-    opts = queries.read_df(
-        "SELECT id, COALESCE(kode_barang,'(no kode)') || ' — ' || deskripsi AS label FROM master_items ORDER BY deskripsi")
+    opts = _item_options(queries.data_fingerprint())
     if not opts.empty:
         idx = int(opts.index[opts["id"] == item_id][0]) if item_id in set(opts["id"]) else 0
         pick = st.selectbox("Barang", opts["label"], index=idx)
