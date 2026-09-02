@@ -6,11 +6,15 @@ The legacy single-Excel dashboard is still at app.py (`streamlit run app.py`), u
 """
 import streamlit as st
 
-from stockwise.ui import boot
+from stockwise.ui import boot, setup_status
 
 boot()
 
-executive = st.Page("pages/executive.py", title="Executive", icon="📦", default=True)
+_s = setup_status()
+_incomplete = not _s["ready"] or _s["ss_open"] or _s["match_open"]
+
+get_started = st.Page("pages/get_started.py", title="Get Started", icon="🚀", default=bool(_incomplete))
+executive = st.Page("pages/executive.py", title="Executive", icon="📦", default=not _incomplete)
 inventory = st.Page("pages/inventory.py", title="Inventory", icon="📋")
 procurement = st.Page("pages/procurement.py", title="Procurement", icon="🚚")
 usage = st.Page("pages/usage.py", title="Usage Analysis", icon="📉")
@@ -22,10 +26,13 @@ matching_review = st.Page("pages/matching_review.py", title="Matching Review", i
 ss_review = st.Page("pages/safety_stock_review.py", title="Safety Stock Review", icon="🛡️")
 ask = st.Page("pages/ask.py", title="Ask STOCKWISE", icon="💬")
 
-nav = st.navigation({
+groups = {
     "Ringkasan": [executive, ask],
     "Operasional": [inventory, procurement, usage, tracking],
     "Data & Referensi": [master_data, item_detail],
     "Review & Kualitas": [matching_review, ss_review, data_management],
-})
-nav.run()
+}
+if _incomplete:
+    groups = {"Mulai di sini": [get_started], **groups}
+
+st.navigation(groups).run()

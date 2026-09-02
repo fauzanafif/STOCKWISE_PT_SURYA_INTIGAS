@@ -62,7 +62,7 @@ if len(df) > 1 and df["kategori_induk"].notna().any():
                       xaxis_title="Item", yaxis_title="", legend_title="",
                       paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     with st.expander("Grafik per kategori", expanded=False):
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 view_df = df.copy()
 view_df["stock_status"] = view_df["stock_status"].map(lambda s: STATUS_LABELS.get(s, s))
@@ -77,12 +77,12 @@ cols = {
 table = view_df[[c for c in cols if c in view_df.columns]].rename(columns=cols)
 
 event = st.dataframe(
-    table, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
+    table, width='stretch', hide_index=True, on_select="rerun", selection_mode="single-row"
 )
 sel = event.get("selection", {}).get("rows", []) if isinstance(event, dict) else event.selection.rows
 if sel:
-    item_id = df.iloc[sel[0]]["id"]
-    st.session_state["detail_item_id"] = item_id
+    st.session_state["detail_item_id"] = df.iloc[sel[0]]["id"]
+    st.session_state["detail_origin"] = "pages/inventory.py"
     st.switch_page("pages/item_detail.py")
 
 st.download_button("⬇️ Download CSV (sesuai filter)", df.to_csv(index=False).encode("utf-8-sig"),

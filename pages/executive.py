@@ -4,11 +4,12 @@ import streamlit as st
 
 from stockwise import queries
 from stockwise.config import STATUS_COLORS, STATUS_LABELS
-from stockwise.ui import fmt_num, kpi_grid, page_header, require_db, section
+from stockwise.ui import attention_strip, fmt_num, kpi_grid, page_header, require_db, section
 
 page_header("Executive Dashboard", "Kondisi inventory, risiko, dan procurement — satu layar.", icon="📦")
 if not require_db():
     st.stop()
+attention_strip()
 
 
 @st.cache_data(show_spinner=False)
@@ -26,9 +27,19 @@ def _top_prio(fp):
     return queries.procurement_priority().head(10)
 
 
+@st.cache_data(show_spinner="Menyusun laporan…")
+def _pdf(fp):
+    from stockwise.report import build_executive_pdf
+    return build_executive_pdf()
+
+
 fp = queries.data_fingerprint()
 k = _kpis(fp)
 health = k["stock_health"]
+
+_hcol = st.columns([4, 1])[1]
+_hcol.download_button("⬇️ Laporan PDF", _pdf(fp), file_name="stockwise_executive.pdf",
+                      mime="application/pdf", width='stretch')
 
 kpi_grid([
     ("Total Item", fmt_num(k["total_item"]), "kode barang di master", "#1f5fbf"),
@@ -48,7 +59,7 @@ _targets = [
     ("🟣 BEP", "BEP"), ("🟠 Belum ada SS", "NO_SAFETY_STOCK"), ("⚪ Stok belum terdata", "UNKNOWN"),
 ]
 for col, (label, status) in zip(jump, _targets):
-    if col.button(label, use_container_width=True):
+    if col.button(label, width='stretch'):
         st.session_state["inv_filter_status"] = status
         st.switch_page("pages/inventory.py")
 
@@ -75,7 +86,7 @@ with c1:
         fig.update_layout(height=300, margin=dict(l=6, r=6, t=6, b=6),
                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           xaxis_title="Jumlah item", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 with c2:
     section("Procurement outstanding")
     st.metric("PPB belum selesai", fmt_num(k["ppb_outstanding"]))
@@ -93,5 +104,5 @@ else:
                  "lead_time_days", "incoming_qty", "projected_stock", "priority_level", "rekomendasi"]].copy()
     show.columns = ["Kode", "Deskripsi", "Sisa", "Safety", "Defisit", "Lead Time",
                     "Incoming", "Projected", "Priority", "Rekomendasi"]
-    st.dataframe(show, use_container_width=True, hide_index=True)
+    st.dataframe(show, width='stretch', hide_index=True)
     st.page_link("pages/inventory.py", label="Lihat semua item di Inventory", icon="📋")

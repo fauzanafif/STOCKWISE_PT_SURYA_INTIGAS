@@ -25,7 +25,7 @@ with t1:
         df = read_df(sql + " ORDER BY deskripsi LIMIT 3000", {"q": f"%{search}%"})
     else:
         df = read_df(sql + " ORDER BY deskripsi LIMIT 3000")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width='stretch', hide_index=True)
     st.caption(f"{len(df):,} baris ditampilkan (maks 3000).")
 
 with t2:
@@ -37,11 +37,11 @@ with t2:
     c[0].metric("Baris parameter", fmt_num(len(df)))
     c[1].metric("SS > 0", fmt_num((df["safety_stock"].fillna(0) > 0).sum()))
     c[2].metric("Konflik antar-sheet", fmt_num((df["dq_flag"] == "SS_CONFLICT").sum()))
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width='stretch', hide_index=True)
 
 with t3:
     df = read_df("SELECT master_item_id, alias, source FROM item_aliases")
     if df.empty:
         st.info("Belum ada alias. Kolom `Nama Alias` di master hanya berisi 'Ya'/'Tidak' (bukan alias) — lihat [A-6].")
     else:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width='stretch', hide_index=True)

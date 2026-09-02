@@ -299,35 +299,41 @@ data asli di environment ini; `stockwise.db` yang dihasilkan portabel dan dibaca
 Logika normalisasi & kalkulasi dicerminkan di `stockwise/textnorm.py` & `stockwise/calc.py`
 (harus tetap sinkron dengan `tools/lib/textnorm.mjs` & `tools/lib/calc.mjs`).
 
+Navigasi (`st.navigation`) dikelompokkan: **Mulai di sini** (Get Started — muncul otomatis sampai
+setup beres) · **Ringkasan** · **Operasional** · **Data & Referensi** · **Review & Kualitas**.
+
 ### Halaman
 
 | Halaman | Isi |
 |---|---|
-| Home (Executive) | KPI stok/risiko/procurement, 10 item paling mendesak |
-| Inventory | daftar barang + status + filter; klik baris → Item Detail |
-| Procurement | priority buy list, status PPB→PO→RI, outstanding |
+| Get Started | checklist setup 5 langkah; jadi halaman default sampai sistem siap |
+| Executive | KPI stok/risiko/procurement, sebaran status, 10 item mendesak, **export PDF**, tombol drill ke Inventory |
+| Ask STOCKWISE | jawaban preset (habis, tidak aman, PPB/PO open, top usage, per divisi/pelanggan, pinjam, maintenance) + mode **tanya satu barang** (sisa/SS/defisit/PPB/PO/outstanding/pemakaian) |
+| Inventory | daftar barang + status + filter cepat + grafik per kategori; klik baris → Item Detail |
+| Procurement | priority buy list (klik baris → detail), status PPB→PO→RI, outstanding, CSV |
 | Usage Analysis | konsumsi NPBG: trend bulanan, top item, per divisi/klasifikasi/pelanggan |
-| Tracking | Borrow/Lend, STPP, Ban, Maintenance Kendaraan, Manufaktur, Pengembalian Bekas |
+| Tracking | Borrow/Lend, STPP, Ban (+BPN, +Deliver/Receive), Maintenance Kendaraan, Manufaktur, Pengembalian Bekas — semua bisa dicari |
 | Master Data | katalog barang, safety-stock params, alias |
-| Item Detail | 360°: stok, procurement, usage, tracking, blueprint, lineage ke baris Excel |
-| Data Management | Upload Center, riwayat proses, data quality |
-| Matching Review | terima/tolak match barang transaksi ↔ master (fuzzy tidak pernah otomatis) |
-| Ask STOCKWISE | jawaban cepat untuk pertanyaan manajemen yang sering muncul |
+| Item Detail | 360°: stok, procurement, usage, tracking, blueprint, lineage ke baris Excel; back-link |
+| Data Management | Upload Center per modul, **Hitung ulang**, rebuild, riwayat proses, data quality |
+| Matching Review | filter antrian + **terima massal ≥ threshold** + review per baris + **buat master item** dari barang baru |
+| Safety Stock Review | untuk barang dengan SS/LT beda antar sheet: lihat semua varian, pilih yang benar |
 
 ### Tes
 
 ```bash
-python tools/smoke_test.py     # semua query + calc engine terhadap stockwise.db asli
+python tools/smoke_test.py     # semua query + calc engine + PDF terhadap stockwise.db asli
 python tools/test_pages.py      # render tiap halaman Streamlit headless, tangkap exception
 ```
 
-Keduanya hijau per commit ini (Python 3.12, Streamlit 1.63; `requirements.txt` minta `>=1.36`).
+Keduanya hijau per commit ini (Python 3.12, Streamlit 1.63).
 
 ### Status & batasan (per bootstrap pertama)
 
-- **Safety Stock** hanya tersedia untuk ~8.600 item (sumber: 13 sheet `SAFETY STOCK *`), dan **6.211
-  di antaranya nilainya berbeda antar-sheet** (`dq_flag=SS_CONFLICT`) — perlu review bisnis.
-  Item tanpa SS tidak diperlakukan sebagai `0`, statusnya `NO_SAFETY_STOCK`.
-- **Sisa Stok** kosong untuk ~71% item di master → status `UNKNOWN`, tidak dihitung sebagai stok 0.
-- Matching barang transaksi ↔ master ~55–58% otomatis (exact/normalized). Sisanya masuk **Matching Review**.
-- Asumsi kerja atas semua konflik data: [`AUDIT/00_decisions.md`](AUDIT/00_decisions.md).
+- **Safety Stock** tersedia untuk ~8.600 item (13 sheet `SAFETY STOCK *`); **3.824 di antaranya
+  nilainya berbeda antar-sheet** → beresi di **Safety Stock Review**. Item tanpa SS bukan `0`,
+  statusnya `NO_SAFETY_STOCK`.
+- **Sisa Stok** kosong untuk ~71% item → status `UNKNOWN`, bukan stok 0.
+- Matching barang transaksi ↔ master ~55–58% otomatis. Sisanya: ~2.500 di **Matching Review** (punya
+  kandidat) + ~sisanya barang baru (buat master item / biarkan).
+- Semua asumsi kerja: [`AUDIT/00_decisions.md`](AUDIT/00_decisions.md).

@@ -117,6 +117,36 @@ def lineage(source_file, source_sheet=None, source_row=None, extra: str = ""):
     st.markdown(f'<div class="sw-lin">Sumber: {" · ".join(str(b) for b in bits)}</div>', unsafe_allow_html=True)
 
 
+_COL_LABELS = {
+    "no_ppb": "No PPB", "no_ri": "No RI", "no_npbg": "No NPBG", "no_po": "No PO",
+    "no_spk": "No SPK", "sub_spk": "Sub SPK", "no_dok": "No Dokumen",
+    "tgl_ppb": "Tgl PPB", "tgl_ri": "Tgl RI", "tgl_npbg": "Tgl NPBG", "tgl": "Tanggal",
+    "tgl_pinjam": "Tgl Pinjam", "tgl_kembali": "Tgl Kembali", "tgl_laporan": "Tgl Laporan",
+    "tgl_selesai": "Tgl Selesai", "tanggal_cut_off": "Tgl Cut Off",
+    "kode_barang": "Kode", "deskripsi": "Deskripsi", "deskripsi_ban_baru": "Ban Baru",
+    "deskripsi_ban_lama": "Ban Lama", "hasil_produk": "Hasil Produk",
+    "qty": "Qty", "satuan_raw": "Satuan", "kategori_induk": "Kategori",
+    "letak_gudang": "Gudang", "letak_rak": "Rak", "uom": "UoM",
+    "peminta": "Peminta", "divisi": "Divisi", "vendor": "Vendor", "pemeriksa": "Pemeriksa",
+    "no_surat_jalan": "No Surat Jalan", "keterangan": "Keterangan",
+    "klasifikasi": "Klasifikasi", "pelanggan": "Pelanggan", "nama_proyek": "Proyek",
+    "match_status": "Match", "status": "Status", "nopol": "Nopol",
+    "ref_npbg": "Ref NPBG", "ref_ri": "Ref RI", "ref_keluar": "Ref Keluar", "ref_kembali": "Ref Kembali",
+    "no_seri": "No Seri", "no_seri_baru": "No Seri Baru", "no_seri_lama": "No Seri Lama",
+    "arah": "Arah", "pihak": "Pihak", "keperluan": "Keperluan", "est_hari": "Est. Hari",
+    "penempatan": "Penempatan", "bengkel": "Bengkel", "proses": "Proses", "jenis": "Jenis",
+    "part_type": "Tipe Part", "format": "Format", "sub": "Sub", "lokasi": "Lokasi",
+    "source_file": "File", "source_row": "Baris",
+}
+
+
+def nice(df):
+    """Title-case / relabel snake_case columns for display."""
+    if df is None or df.empty:
+        return df
+    return df.rename(columns={c: _COL_LABELS.get(c, c.replace("_", " ").title()) for c in df.columns})
+
+
 def fmt_num(v, dash="—"):
     if v is None:
         return dash
@@ -130,3 +160,41 @@ def fmt_num(v, dash="—"):
 def open_item(item_id: str):
     st.session_state["detail_item_id"] = item_id
     st.switch_page("pages/item_detail.py")
+
+
+def setup_status() -> dict:
+    """Progress of the one-time setup pipeline — drives the Get Started checklist."""
+    from stockwise.db import scalar
+
+    if not db_exists():
+        return {"stage": 0, "has_master": False, "has_tx": False, "ss_open": 0,
+                "match_open": 0, "calc_done": False, "ready": False}
+    has_master = (scalar("SELECT COUNT(*) FROM master_items") or 0) > 0
+    has_tx = (scalar("SELECT COUNT(*) FROM npbg_lines") or 0) + (scalar("SELECT COUNT(*) FROM ppb_lines") or 0) > 0
+    ss_open = scalar("SELECT COUNT(*) FROM safety_stock_params WHERE dq_flag='SS_CONFLICT'") or 0
+    match_open = scalar(
+        "SELECT COUNT(DISTINCT source_table||source_row_id) FROM matching_reviews "
+        "WHERE decision='PENDING' AND candidate_item_id IS NOT NULL") or 0
+    calc_done = (scalar("SELECT COUNT(*) FROM calc_runs") or 0) > 0
+    ready = has_master and has_tx and calc_done
+    return {
+        "stage": sum([has_master, has_tx, ss_open == 0, match_open == 0, calc_done]),
+        "has_master": has_master, "has_tx": has_tx, "ss_open": ss_open,
+        "match_open": match_open, "calc_done": calc_done, "ready": ready,
+    }
+
+
+def attention_strip():
+    """Compact 'needs attention' bar — shown at the top of the main dashboards."""
+    s = setup_status()
+    bits = []
+    if s["ss_open"]:
+        bits.append((f"🛡️ {s['ss_open']:,} konflik Safety Stock", "pages/safety_stock_review.py"))
+    if s["match_open"]:
+        bits.append((f"🤝 {s['match_open']:,} barang perlu di-match", "pages/matching_review.py"))
+    if not bits:
+        return
+    cols = st.columns(len(bits) + 1)
+    cols[0].caption("Perlu ditindaklanjuti:")
+    for col, (label, page) in zip(cols[1:], bits):
+        col.page_link(page, label=label)

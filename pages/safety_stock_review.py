@@ -60,7 +60,7 @@ for _, row in page.iterrows():
         vshow = v.rename(columns={
             "source_sheet": "Sheet", "safety_stock": "SS", "lead_time_days": "LT",
             "sqrt_lt": "√LT", "min_pr": "MIN PR", "avg_12_bln": "Avg 12 bln"})
-        st.dataframe(vshow, use_container_width=True, hide_index=True)
+        st.dataframe(vshow, width='stretch', hide_index=True)
         cols = st.columns(min(len(v), 4))
         for i, (_, vr) in enumerate(v.iterrows()):
             btn = cols[i % 4].button(

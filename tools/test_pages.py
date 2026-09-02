@@ -15,9 +15,15 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 # AppTest.from_file runs each page in isolation without the folder-based `pages/`
 # registry, so st.page_link / st.switch_page to a sibling page raise
 # StreamlitPageNotFoundError even though they work in a real `streamlit run`.
-# Stub them so the test exercises page *logic*, not navigation wiring.
-st.page_link = lambda *a, **k: None
-st.switch_page = lambda *a, **k: None
+# Stub them (on both st and the column/DeltaGenerator) so the test exercises
+# page *logic*, not navigation wiring.
+from streamlit.delta_generator import DeltaGenerator  # noqa: E402
+
+_noop = lambda *a, **k: None  # noqa: E731
+st.page_link = _noop
+st.switch_page = _noop
+DeltaGenerator.page_link = _noop
+DeltaGenerator.switch_page = _noop
 
 PAGES = ["Home.py"] + sorted(str(p.relative_to(ROOT)) for p in (ROOT / "pages").glob("*.py"))
 

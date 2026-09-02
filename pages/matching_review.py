@@ -127,7 +127,7 @@ with tab_q:
 with tab_new:
     st.caption("Barang di transaksi yang tidak punya kandidat sama sekali. Buat master item untuk yang valid.")
     st.dataframe(stats["new_items"].rename(columns={"t": "Tabel", "n": "Jumlah baris"}),
-                 use_container_width=True, hide_index=True)
+                 width='stretch', hide_index=True)
     tsel = st.selectbox("Lihat daftar dari tabel", list(TX_TABLES))
     col = TX_TABLES[tsel]
     df = queries.read_df(
@@ -137,7 +137,7 @@ with tab_new:
     if df.empty:
         st.info("Tidak ada.")
     else:
-        st.dataframe(df[["deskripsi", "n_baris"]], use_container_width=True, hide_index=True)
+        st.dataframe(df[["deskripsi", "n_baris"]], width='stretch', hide_index=True)
         pick = st.selectbox("Buat master item dari", df["deskripsi"])
         if st.button("Buat master item"):
             rid = int(df.loc[df["deskripsi"] == pick, "id"].iloc[0])

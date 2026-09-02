@@ -27,7 +27,7 @@ if not monthly.empty:
     c3.metric("Dokumen NPBG", fmt_num(monthly["dokumen"].sum()))
     fig = px.bar(monthly, x="ym", y="qty", title="Konsumsi per bulan (qty NPBG)")
     fig.update_layout(height=320, xaxis_title="", yaxis_title="Qty", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 st.divider()
 c1, c2 = st.columns(2)
@@ -37,22 +37,22 @@ with c1:
     if not d.empty:
         st.plotly_chart(px.bar(d.head(15), x="qty", y="divisi", orientation="h").update_layout(
             height=380, yaxis_title="", xaxis_title="Qty", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"),
-            use_container_width=True)
+            width='stretch')
 with c2:
     st.markdown("#### Per Klasifikasi")
     d = u["by_klasifikasi"]
     if not d.empty:
         st.plotly_chart(px.bar(d, x="qty", y="klasifikasi", orientation="h").update_layout(
             height=380, yaxis_title="", xaxis_title="Qty", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"),
-            use_container_width=True)
+            width='stretch')
 
 st.divider()
 st.markdown("#### Barang paling banyak keluar (Top 50)")
 ti = u["top_items"].copy()
 if not ti.empty:
     ti.columns = ["Deskripsi", "Kode", "Total Qty", "Baris NPBG", "Match"]
-    st.dataframe(ti, use_container_width=True, hide_index=True)
+    st.dataframe(ti, width='stretch', hide_index=True)
     st.caption("Baris dengan Match ≠ MATCHED belum terhubung pasti ke master — selesaikan di Data Management → Matching Review.")
 
 with st.expander("Per Pelanggan (Top 30)"):
-    st.dataframe(u["by_pelanggan"], use_container_width=True, hide_index=True)
+    st.dataframe(u["by_pelanggan"], width='stretch', hide_index=True)

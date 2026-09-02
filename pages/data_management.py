@@ -64,7 +64,7 @@ with tab_hist:
     if df.empty:
         st.info("Belum ada batch upload.")
     else:
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, width='stretch', hide_index=True)
 
 with tab_dq:
     dq = queries.data_quality()
@@ -76,8 +76,8 @@ with tab_dq:
     st.page_link("pages/matching_review.py", label="→ Buka Matching Review", icon="🤝")
 
     st.markdown("#### Barang transaksi belum ter-match")
-    st.dataframe(dq["unmatched"], use_container_width=True, hide_index=True)
+    st.dataframe(dq["unmatched"], width='stretch', hide_index=True)
     st.markdown("#### Flag data master")
-    st.dataframe(dq["master_flags"], use_container_width=True, hide_index=True)
+    st.dataframe(dq["master_flags"], width='stretch', hide_index=True)
     st.markdown("#### Peringatan import")
-    st.dataframe(dq["import_errors"], use_container_width=True, hide_index=True)
+    st.dataframe(dq["import_errors"], width='stretch', hide_index=True)

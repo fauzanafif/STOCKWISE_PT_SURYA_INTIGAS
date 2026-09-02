@@ -4,7 +4,7 @@ import streamlit as st
 
 from stockwise import queries
 from stockwise.config import STATUS_LABELS
-from stockwise.ui import fmt_num, lineage, page_header, require_db, status_badge
+from stockwise.ui import fmt_num, lineage, nice, page_header, require_db, status_badge
 
 page_header("Item Detail", icon="🔍")
 if not require_db():
@@ -29,7 +29,8 @@ with st.sidebar:
         item_id = opts.loc[opts["label"] == pick, "id"].iloc[0]
 
 if not item_id:
-    st.info("Pilih barang di sidebar, atau klik satu baris di halaman Inventory.")
+    st.info("Pilih barang di sidebar, atau klik satu baris di halaman Inventory / Procurement.")
+    st.page_link("pages/inventory.py", label="← Ke Inventory", icon="📋")
     st.stop()
 
 d = queries.item_detail(item_id)
@@ -38,6 +39,8 @@ if not m:
     st.error("Item tidak ditemukan.")
     st.stop()
 
+back = st.session_state.get("detail_origin", "pages/inventory.py")
+st.page_link(back, label="← Kembali", icon="↩️")
 st.markdown(f"### {m['deskripsi']}")
 st.markdown(
     f"`{m['kode_barang'] or '(tanpa kode)'}` · {m['kategori_induk'] or '-'} "
@@ -67,23 +70,23 @@ tabs = st.tabs(["🚚 Procurement", "📉 Usage (NPBG)", "📍 Tracking", "🖼�
 
 with tabs[0]:
     st.markdown("**PPB**")
-    st.dataframe(d["ppb"], use_container_width=True, hide_index=True) if not d["ppb"].empty else st.caption("Tidak ada PPB terhubung.")
+    st.dataframe(nice(d["ppb"]), width='stretch', hide_index=True) if not d["ppb"].empty else st.caption("Tidak ada PPB terhubung.")
     st.markdown("**RI (penerimaan)**")
-    st.dataframe(d["ri"], use_container_width=True, hide_index=True) if not d["ri"].empty else st.caption("Tidak ada RI terhubung.")
+    st.dataframe(nice(d["ri"]), width='stretch', hide_index=True) if not d["ri"].empty else st.caption("Tidak ada RI terhubung.")
 
 with tabs[1]:
     um = d["usage_monthly"]
     if not um.empty:
         st.plotly_chart(px.bar(um, x="ym", y="qty", title="Pemakaian per bulan").update_layout(
             height=280, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_title="", yaxis_title="Qty"),
-            use_container_width=True)
+            width='stretch')
         st.metric("Total keluar (NPBG)", fmt_num(d["npbg"]["qty"].sum()))
-    st.dataframe(d["npbg"], use_container_width=True, hide_index=True) if not d["npbg"].empty else st.caption("Belum ada NPBG terhubung ke barang ini.")
+    st.dataframe(nice(d["npbg"]), width='stretch', hide_index=True) if not d["npbg"].empty else st.caption("Belum ada NPBG terhubung ke barang ini.")
 
 with tabs[2]:
     for label, key in [("Borrow & Lend", "borrow_lend"), ("STPP", "stpp"), ("Manufaktur & Assembly", "manufacturing")]:
         st.markdown(f"**{label}**")
-        st.dataframe(d[key], use_container_width=True, hide_index=True) if not d[key].empty else st.caption("—")
+        st.dataframe(nice(d[key]), width='stretch', hide_index=True) if not d[key].empty else st.caption("—")
 
 with tabs[3]:
     st.write({"Letak Gudang": m["letak_gudang"], "Letak Rak": m["letak_rak"], "Perlu Blueprint?": m["perlu_blueprint"]})
