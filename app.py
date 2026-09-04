@@ -403,6 +403,9 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         result = result[result["Status"].isin(filters["status"])]
     if filters["perlu_blueprint"]:
         result = result[result["Perlu Blueprint?"].isin(filters["perlu_blueprint"])]
+    if filters.get("npbg_presence") in ("Ada NPBG", "Belum ada NPBG") and "NPBG" in result.columns:
+        has_npbg = result["NPBG"].notna()
+        result = result[has_npbg if filters["npbg_presence"] == "Ada NPBG" else ~has_npbg]
     if filters["kode_search"]:
         result = result[result["Kode Barang"].astype(str).str.contains(filters["kode_search"], case=False, na=False)]
     if filters["desk_search"]:
@@ -449,6 +452,17 @@ def render_sidebar(df: pd.DataFrame):
     gudang = st.sidebar.multiselect("Letak Gudang", _filter_options(df, "Letak Gudang"))
     status = st.sidebar.multiselect("Status", _filter_options(df, "Status"))
     perlu_blueprint = st.sidebar.multiselect("Perlu Blueprint?", _filter_options(df, "Perlu Blueprint?"))
+
+    npbg_presence = "Semua"
+    if st.session_state.npbg_df is not None and "NPBG" in df.columns:
+        n_ada = int(df["NPBG"].notna().sum())
+        npbg_presence = st.sidebar.radio(
+            "Barang dengan NPBG",
+            ["Semua", "Ada NPBG", "Belum ada NPBG"],
+            horizontal=True,
+            help=f"{n_ada:,} barang punya data NPBG (barang AMAN yang cocok dengan file NPBG).",
+        )
+
     kode_search = st.sidebar.text_input("Cari Kode Barang")
     desk_search = st.sidebar.text_input("Cari Deskripsi Barang")
 
@@ -487,6 +501,7 @@ def render_sidebar(df: pd.DataFrame):
     any_active = bool(
         kategori_induk or kategori_anak1 or kategori_anak2 or kategori_anak3 or uom
         or gudang or status or perlu_blueprint or kode_search or desk_search
+        or npbg_presence != "Semua"
         or lead_time_range != (lt_min_data, lt_max_data)
         or selisih_range != (sel_min_data, sel_max_data)
     )
@@ -500,6 +515,7 @@ def render_sidebar(df: pd.DataFrame):
         "gudang": gudang,
         "status": status,
         "perlu_blueprint": perlu_blueprint,
+        "npbg_presence": npbg_presence,
         "kode_search": kode_search,
         "desk_search": desk_search,
         "lead_time_range": lead_time_range,
