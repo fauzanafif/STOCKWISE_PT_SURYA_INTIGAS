@@ -809,7 +809,8 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
     # ---------- KONDISI STOK ----------
     if inv_df is not None:
         st.divider()
-        render_section_header("Kondisi Stok", "Berapa banyak barang yang aman, dan yang stoknya menipis.")
+        render_section_header("Kondisi Stok",
+                              "Berapa banyak barang yang aman, yang stoknya menipis, dan di gudang/kategori mana.")
         c1, c2 = st.columns([1, 1.4])
         with c1:
             render_chart(
@@ -829,6 +830,28 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
                 stock_vs_safety_bar(inv_df),
                 key="dash_stok_vs_safety",
             )
+
+        # Rincian per gudang & kategori — dulu ada di expander terpisah, sekarang
+        # jadi bagian dari Kondisi Stok supaya langsung kelihatan.
+        g1, g2 = st.columns(2)
+        with g1:
+            render_chart("Per Gudang — Aman / Tidak Aman",
+                         "Jumlah barang tiap status di masing-masing gudang.",
+                         warehouse_status_bar(inv_df), key="dash_wh_status")
+            render_chart("Per Gudang — Stok vs Batas Aman",
+                         "Total stok dibanding total batas aman per gudang.",
+                         warehouse_stock_bar(inv_df), key="dash_wh_stock")
+        with g2:
+            render_chart("Per Kategori — Aman / Tidak Aman",
+                         "Jumlah barang tiap status di masing-masing kategori induk.",
+                         category_status_bar(inv_df), key="dash_cat_status")
+            render_chart("Lead Time vs Kekurangan Stok",
+                         "Lead time lama + kurang banyak = paling perlu diprioritaskan.",
+                         lead_time_scatter(inv_df), key="dash_leadtime")
+
+        st.write("")
+        render_section_header("Catatan Otomatis", "Ringkasan singkat dari kondisi stok di atas.")
+        render_insight_cards(generate_insights(inv_df, lead_time_threshold))
 
         # ---------- YANG PERLU SEGERA DIBELI ----------
         unsafe = inv_df[inv_df["Status"] == STATUS_TIDAK_AMAN].sort_values("Priority Score", ascending=False)
@@ -896,27 +919,6 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
         with cc2:
             render_chart("Divisi Pemakai Terbanyak (Top 10)", "",
                          _txn_bar(s["per_divisi"], "Baris item"), key="dash_npbg_divisi")
-
-    # ---------- ANALISA DETAIL (opsional) ----------
-    if inv_df is not None:
-        st.divider()
-        with st.expander("📈 Analisa stok lebih detail (per gudang & kategori)"):
-            g1, g2 = st.columns(2)
-            with g1:
-                render_chart("Per Gudang — Aman / Tidak Aman", "",
-                             warehouse_status_bar(inv_df), key="dash_wh_status")
-                render_chart("Per Gudang — Stok vs Batas Aman", "",
-                             warehouse_stock_bar(inv_df), key="dash_wh_stock")
-            with g2:
-                render_chart("Per Kategori — Aman / Tidak Aman", "",
-                             category_status_bar(inv_df), key="dash_cat_status")
-                render_chart("Lead Time vs Kekurangan Stok",
-                             "Lead time lama + kurang banyak = paling perlu diprioritaskan.",
-                             lead_time_scatter(inv_df), key="dash_leadtime")
-            st.write("")
-            render_section_header("Catatan Otomatis", "")
-            render_insight_cards(generate_insights(inv_df, lead_time_threshold))
-
 
 def _txn_empty_state(judul: str, file_hint: str, sheet: str, kolom_kunci: str):
     st.info(f"👈 Upload file **{judul}** dulu di sidebar.")
