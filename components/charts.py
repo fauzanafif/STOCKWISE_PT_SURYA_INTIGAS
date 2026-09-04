@@ -44,14 +44,25 @@ def status_donut(df):
             go.Pie(
                 labels=counts.index,
                 values=counts.values,
-                hole=0.55,
+                hole=0.58,
                 marker=dict(colors=[STATUS_COLOR_MAP[s] for s in counts.index]),
                 sort=False,
+                # % only on the slices; the color legend below says which is which.
+                # "label+percent" on every slice made the small ones collide with
+                # the legend and the centre.
+                texttemplate="%{percent}",
+                textposition="inside",
+                hovertemplate="%{label}: %{value:,.0f} barang (%{percent})<extra></extra>",
             )
         ]
     )
-    fig.update_traces(textinfo="label+percent")
-    return _style(fig, height=340)
+    fig = _style(fig, height=340)
+    # legend under the chart, not overlapping the title/centre
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="center", x=0.5),
+        margin=dict(l=10, r=10, t=10, b=10),
+    )
+    return fig
 
 
 def top_deficit_bar(df, top_n=10):
@@ -59,29 +70,40 @@ def top_deficit_bar(df, top_n=10):
     if data.empty:
         return None
     label_col = "Deskripsi Barang" if "Deskripsi Barang" in data.columns else "Kode Barang"
+    plot_df = data.sort_values("Defisit").copy()
+    plot_df["_label"] = [_short(v) for v in plot_df[label_col]]
     fig = px.bar(
-        data.sort_values("Defisit"),
+        plot_df,
         x="Defisit",
-        y=label_col,
+        y="_label",
         orientation="h",
         color="Defisit",
         color_continuous_scale=SEQUENTIAL_BLUE,
     )
     fig.update_coloraxes(showscale=False)
-    fig.update_layout(yaxis_title="", xaxis_title="Defisit")
-    return _style(fig, height=max(340, 32 * len(data)))
+    fig.update_layout(yaxis_title="", xaxis_title="Kekurangan (unit)")
+    return _style(fig, height=max(340, 34 * len(data)))
+
+
+def _short(label, n=34):
+    label = str(label)
+    return label if len(label) <= n else label[: n - 1] + "…"
 
 
 def stock_vs_safety_bar(df, top_n=10):
-    data = df.sort_values("Defisit", ascending=False).head(top_n)
+    # Only meaningful for items that are actually short of their safety stock —
+    # otherwise the chart is a row of near-empty bars with unreadable labels.
+    data = df[df["Defisit"] > 0].sort_values("Defisit", ascending=False).head(top_n)
     if data.empty:
         return None
     label_col = "Deskripsi Barang" if "Deskripsi Barang" in data.columns else "Kode Barang"
+    data = data.iloc[::-1]  # biggest deficit on top for a horizontal bar
+    labels = [_short(v) for v in data[label_col]]
     fig = go.Figure()
-    fig.add_bar(name="Sisa Stok", x=data[label_col], y=data["Sisa Stok"], marker_color=SERIES_BLUE)
-    fig.add_bar(name="Safety Stock", x=data[label_col], y=data["Safety Stock"], marker_color=SERIES_ORANGE)
-    fig.update_layout(barmode="group", xaxis_title="", yaxis_title="Qty")
-    return _style(fig, height=380)
+    fig.add_bar(name="Stok sekarang", y=labels, x=data["Sisa Stok"], orientation="h", marker_color=SERIES_BLUE)
+    fig.add_bar(name="Batas aman", y=labels, x=data["Safety Stock"], orientation="h", marker_color=SERIES_ORANGE)
+    fig.update_layout(barmode="group", xaxis_title="Qty", yaxis_title="")
+    return _style(fig, height=max(320, 46 * len(data)))
 
 
 def warehouse_status_bar(df):
