@@ -3,6 +3,7 @@ import base64
 from pathlib import Path
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from components.charts import (
@@ -20,7 +21,9 @@ from utils.calculations import STATUS_TIDAK_AMAN, recalculate, suggest_lead_time
 from utils.excel_handler import build_template_bytes, load_dropdown_options, load_excel, to_export_bytes
 from utils.insights import generate_insights
 from utils.pdf_export import build_pdf_bytes
-from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING
+from utils.npbg_handler import NPBG_DISPLAY_COLUMNS, load_npbg, npbg_summary
+from utils.ppb_handler import PPB_DISPLAY_COLUMNS, load_ppb, ppb_summary
+from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING, SERIES_BLUE
 
 LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
 
@@ -330,6 +333,16 @@ def init_state():
         ("debug_info", None),
         ("dropdown_options", {}),
         ("hidden_columns", []),
+        # --- PPB (Permintaan Pembelian Barang) ---
+        ("ppb_df", None),
+        ("ppb_file_name", None),
+        ("ppb_signature", None),
+        ("ppb_debug", None),
+        # --- NPBG (Nota Pengeluaran Barang Gudang) ---
+        ("npbg_df", None),
+        ("npbg_file_name", None),
+        ("npbg_signature", None),
+        ("npbg_debug", None),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -397,7 +410,9 @@ def _filter_options(df: pd.DataFrame, col: str, extra_options: dict = None) -> l
 
 
 def render_sidebar(df: pd.DataFrame):
-    st.sidebar.header("Filter")
+    st.sidebar.header("🔎 Filter Inventory")
+    st.sidebar.caption("Berlaku untuk tab Dashboard, Data Inventory, dan Procurement. "
+                       "Tab PPB & NPBG punya filter sendiri di dalamnya.")
     dropdown_options = st.session_state.dropdown_options
 
     kategori_induk = st.sidebar.multiselect(
@@ -574,6 +589,11 @@ def render_welcome():
 
     st.write("")
     st.info("👈 Upload file Excel-nya dulu di sidebar sebelah kiri.")
+    st.caption(
+        "Di sidebar ada 3 upload: **Excel Inventory** (data barang/stok), **Excel PPB** "
+        "(permintaan pembelian), dan **Excel NPBG** (barang keluar gudang). "
+        "Bisa salah satu dulu — PPB & NPBG juga bisa dibuka tanpa data inventory."
+    )
 
     st.markdown("##### Belum punya file? Pakai template ini aja:")
     st.download_button(
@@ -586,6 +606,320 @@ def render_welcome():
     st.caption(
         "Formatnya udah sesuai, termasuk contoh Sisa Stok kayak \"STOK 15 PCS\" — tinggal isi datanya."
     )
+
+
+def handle_ppb_upload(uploaded_ppb):
+    """Parse an uploaded PPB workbook into session_state (debounced on file signature)."""
+    if uploaded_ppb is None:
+        return
+    signature = f"{uploaded_ppb.name}-{uploaded_ppb.size}"
+    if signature == st.session_state.ppb_signature:
+        return
+    with st.spinner("Membaca file PPB..."):
+        ppb_df, error, debug = load_ppb(uploaded_ppb)
+    st.session_state.ppb_debug = debug
+    if error:
+        st.sidebar.error(error)
+        return
+    st.session_state.ppb_df = ppb_df
+    st.session_state.ppb_signature = signature
+    st.session_state.ppb_file_name = uploaded_ppb.name
+    st.toast(
+        f"PPB dimuat: {ppb_df['No PPB'].nunique():,} PPB / {len(ppb_df):,} baris item.", icon="📋"
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _cached_ppb_csv(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+# ---- Shared helpers for the PPB / NPBG (transaction) tabs ----
+
+_CHART_FONT = dict(family="'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif")
+
+
+def _txn_bar(mapping: dict, value_title: str, color: str = SERIES_BLUE, height: int = 360, top: int = 10):
+    """A horizontal bar figure styled like the Dashboard charts (transparent bg,
+    Inter font, blue). `mapping` = {label: value}, drawn biggest-at-top, Top `top`."""
+    if not mapping:
+        return None
+    ser = pd.Series(mapping).sort_values(ascending=False).head(top).sort_values(ascending=True)
+    labels = [str(x).replace("(kosong)", "(tanpa nilai)") for x in ser.index]
+    fig = px.bar(x=ser.values, y=labels, orientation="h")
+    fig.update_traces(marker_color=color, hovertemplate="%{y}: %{x:,.0f}<extra></extra>")
+    fig.update_layout(
+        height=height, margin=dict(l=10, r=10, t=6, b=10),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=_CHART_FONT,
+        xaxis_title=value_title, yaxis_title="",
+    )
+    fig.update_xaxes(gridcolor="#dde6f4", zeroline=False)
+    fig.update_yaxes(gridcolor="rgba(0,0,0,0)")
+    return fig
+
+
+def _txn_month_bar(per_month: dict):
+    if not per_month:
+        return None
+    ser = pd.Series(per_month).sort_index()
+    fig = px.bar(x=ser.index, y=ser.values)
+    fig.update_traces(marker_color=SERIES_BLUE, hovertemplate="%{x}: %{y:,.0f}<extra></extra>")
+    fig.update_layout(
+        height=300, margin=dict(l=10, r=10, t=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=_CHART_FONT,
+        xaxis_title="", yaxis_title="Kuantitas",
+    )
+    fig.update_xaxes(gridcolor="rgba(0,0,0,0)")
+    fig.update_yaxes(gridcolor="#dde6f4", zeroline=False)
+    return fig
+
+
+def _txn_kpi_cards(cards: list):
+    """KPI cards in the same style as the Dashboard (`.sw-kpi-*`). `cards` =
+    list of (icon, label, value, sub)."""
+    html = ['<div class="sw-kpi-grid">']
+    for icon, label, value, sub in cards:
+        html.append(
+            f'<div class="sw-kpi-card">'
+            f'<div class="sw-kpi-icon" style="background:{SERIES_BLUE}1a;color:{SERIES_BLUE};">{icon}</div>'
+            f'<div class="sw-kpi-body"><div class="sw-kpi-label">{label}</div>'
+            f'<div class="sw-kpi-value" style="color:{SERIES_BLUE};">{value}</div>'
+            f'<div class="sw-kpi-sub">{sub}</div></div></div>'
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def _txn_empty_state(judul: str, file_hint: str, sheet: str, kolom_kunci: str):
+    st.info(f"👈 Upload file **{judul}** dulu di sidebar.")
+    st.caption(
+        f"File `{file_hint}` — sistem otomatis pakai sheet **{sheet}**, cari baris header "
+        f"(yang ada kolom *{kolom_kunci}*), dan buang baris kosong."
+    )
+
+
+def _fmt_period(s: dict) -> str:
+    def f(v):
+        return v.strftime("%d %b %Y") if v is not None and pd.notna(v) else "-"
+    return f"{f(s['date_min'])} – {f(s['date_max'])}"
+
+
+def render_ppb_view(ppb_df: pd.DataFrame):
+    """Tampilan data PPB: KPI, sebaran status/divisi, filter, tabel."""
+    if ppb_df is None or ppb_df.empty:
+        _txn_empty_state("PPB", "1. PPB - RI.xlsx", "PPB", "No PPB")
+        return
+
+    s = ppb_summary(ppb_df)
+    n_requested = int((ppb_df["Status"].str.lower() == "requested").sum()) if "Status" in ppb_df.columns else 0
+
+    _txn_kpi_cards([
+        ("📋", "Jumlah PPB", f"{s['total_ppb']:,}", "nomor PPB unik"),
+        ("🧾", "Baris Item", f"{s['total_item']:,}", "satu baris = satu item diminta"),
+        ("📦", "Total Kuantitas", f"{s['total_qty']:,.0f}", "seluruh item yang diminta"),
+        ("⏳", "Masih 'Requested'", f"{n_requested:,}", "baris item belum diproses"),
+    ])
+    st.caption(f"Periode PPB: **{_fmt_period(s)}**.")
+
+    st.divider()
+    render_section_header("Sebaran PPB", "Berdasarkan status dan divisi peminta.")
+    c1, c2 = st.columns(2)
+    with c1:
+        render_chart("Status PPB", "Jumlah baris item per status.",
+                     _txn_bar(s["per_status"], "Baris item"))
+    with c2:
+        render_chart("PPB per Divisi (Top 10)", "Divisi peminta terbanyak.",
+                     _txn_bar(s["per_divisi"], "Baris item"))
+
+    st.divider()
+    render_section_header("Daftar PPB", "Filter dulu, lalu unduh kalau perlu.")
+
+    with st.container(border=True):
+        fcol1, fcol2, fcol3 = st.columns([1, 1, 2])
+        status_opts = sorted(x for x in ppb_df["Status"].dropna().unique() if str(x).strip())
+        divisi_opts = sorted(x for x in ppb_df["Divisi"].dropna().unique() if str(x).strip())
+        f_status = fcol1.multiselect("Status", status_opts, key="ppb_f_status", placeholder="Semua status")
+        f_divisi = fcol2.multiselect("Divisi", divisi_opts, key="ppb_f_divisi", placeholder="Semua divisi")
+        f_search = fcol3.text_input("Cari", key="ppb_f_search",
+                                    placeholder="No PPB, deskripsi barang, atau nama peminta…")
+
+        view = ppb_df
+        if f_status:
+            view = view[view["Status"].isin(f_status)]
+        if f_divisi:
+            view = view[view["Divisi"].isin(f_divisi)]
+        if f_search:
+            q = f_search.strip()
+            mask = (
+                view["No PPB"].astype(str).str.contains(q, case=False, na=False)
+                | view["Deskripsi Barang"].astype(str).str.contains(q, case=False, na=False)
+                | view["Peminta"].astype(str).str.contains(q, case=False, na=False)
+            )
+            view = view[mask]
+
+        st.caption(f"Menampilkan **{len(view):,}** dari **{len(ppb_df):,}** baris item — "
+                   f"**{view['No PPB'].nunique():,}** PPB.")
+
+        show_cols = [c for c in PPB_DISPLAY_COLUMNS if c in view.columns]
+        display = view[show_cols].copy()
+        if "Tgl PPB" in display.columns:
+            display["Tgl PPB"] = display["Tgl PPB"].dt.strftime("%Y-%m-%d")
+        st.dataframe(display, use_container_width=True, hide_index=True, height=430)
+
+        st.download_button(
+            "⬇️ Download CSV (sesuai filter)",
+            data=_cached_ppb_csv(view[show_cols]),
+            file_name="ppb_export.csv", mime="text/csv", key="ppb_csv_download",
+        )
+
+    debug = st.session_state.ppb_debug
+    if debug:
+        with st.expander("🐞 Debug PPB — sheet, header, kolom yang terdeteksi"):
+            st.write("Sheet pada workbook:", debug.get("all_sheets"))
+            st.write("Sheet yang dipakai:", debug.get("sheet"))
+            st.write("Baris header (Excel):", debug.get("header_row"))
+            st.write("Kolom terdeteksi:", debug.get("columns"))
+
+
+def handle_npbg_upload(uploaded_npbg):
+    """Parse an uploaded NPBG workbook into session_state (debounced on signature)."""
+    if uploaded_npbg is None:
+        return
+    signature = f"{uploaded_npbg.name}-{uploaded_npbg.size}"
+    if signature == st.session_state.npbg_signature:
+        return
+    with st.spinner("Membaca file NPBG..."):
+        npbg_df, error, debug = load_npbg(uploaded_npbg)
+    st.session_state.npbg_debug = debug
+    if error:
+        st.sidebar.error(error)
+        return
+    st.session_state.npbg_df = npbg_df
+    st.session_state.npbg_signature = signature
+    st.session_state.npbg_file_name = uploaded_npbg.name
+    st.toast(
+        f"NPBG dimuat: {npbg_df['No NPBG'].nunique():,} NPBG / {len(npbg_df):,} baris item.", icon="📤"
+    )
+
+
+@st.cache_data(show_spinner=False)
+def _cached_npbg_csv(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def render_npbg_view(npbg_df: pd.DataFrame):
+    """Tampilan data NPBG (barang keluar): KPI, trend bulanan, sebaran, filter, tabel."""
+    if npbg_df is None or npbg_df.empty:
+        _txn_empty_state("NPBG", "2. NPBG.xlsx", "NPBG", "No NPBG")
+        return
+
+    s = npbg_summary(npbg_df)
+    n_months = max(len(s["per_month"]), 1)
+    avg_month = s["total_qty"] / n_months
+    n_jual = int((npbg_df["Tipe NPBG"].str.upper() == "PENJUALAN").sum()) if "Tipe NPBG" in npbg_df.columns else 0
+
+    _txn_kpi_cards([
+        ("📤", "Jumlah NPBG", f"{s['total_npbg']:,}", "nomor NPBG unik"),
+        ("🧾", "Baris Item Keluar", f"{s['total_item']:,}", "satu baris = satu item keluar"),
+        ("📦", "Total Kuantitas Keluar", f"{s['total_qty']:,.0f}", "seluruh periode"),
+        ("📈", "Rata-rata / Bulan", f"{avg_month:,.0f}", f"dari {n_months} bulan aktif"),
+    ])
+    st.caption(f"Periode NPBG: **{_fmt_period(s)}**  ·  {n_jual:,} baris bertipe PENJUALAN.")
+
+    if s["per_month"]:
+        st.divider()
+        render_section_header("Barang Keluar per Bulan", "Total kuantitas NPBG tiap bulan — pola pemakaian gudang.")
+        render_chart("Kuantitas keluar per bulan", "", _txn_month_bar(s["per_month"]))
+
+    st.divider()
+    render_section_header("Sebaran NPBG", "Berdasarkan klasifikasi keperluan dan divisi pemakai.")
+    c1, c2 = st.columns(2)
+    with c1:
+        render_chart("NPBG per Klasifikasi (Top 10)", "Untuk apa barang dikeluarkan.",
+                     _txn_bar(s["per_klasifikasi"], "Baris item"))
+    with c2:
+        render_chart("NPBG per Divisi Pemakai (Top 10)", "Divisi yang paling banyak keluarkan barang.",
+                     _txn_bar(s["per_divisi"], "Baris item"))
+
+    st.divider()
+    render_section_header("Daftar NPBG", "Filter dulu, lalu unduh kalau perlu.")
+
+    with st.container(border=True):
+        fcol1, fcol2, fcol3, fcol4 = st.columns([1, 1, 1, 2])
+        klas_opts = sorted(x for x in npbg_df["Klasifikasi"].dropna().unique() if str(x).strip()) if "Klasifikasi" in npbg_df.columns else []
+        div_opts = sorted(x for x in npbg_df["Divisi"].dropna().unique() if str(x).strip()) if "Divisi" in npbg_df.columns else []
+        tipe_opts = sorted(x for x in npbg_df["Tipe NPBG"].dropna().unique() if str(x).strip()) if "Tipe NPBG" in npbg_df.columns else []
+        f_klas = fcol1.multiselect("Klasifikasi", klas_opts, key="npbg_f_klas", placeholder="Semua")
+        f_div = fcol2.multiselect("Divisi", div_opts, key="npbg_f_div", placeholder="Semua")
+        f_tipe = fcol3.multiselect("Tipe", tipe_opts, key="npbg_f_tipe", placeholder="Semua")
+        f_search = fcol4.text_input("Cari", key="npbg_f_search",
+                                    placeholder="No NPBG, deskripsi, pelanggan, proyek, atau peminta…")
+
+        view = npbg_df
+        if f_klas:
+            view = view[view["Klasifikasi"].isin(f_klas)]
+        if f_div:
+            view = view[view["Divisi"].isin(f_div)]
+        if f_tipe:
+            view = view[view["Tipe NPBG"].isin(f_tipe)]
+        if f_search:
+            q = f_search.strip()
+            cols_search = [c for c in ["No NPBG", "Deskripsi Barang", "Pelanggan", "Nama Proyek", "Peminta"] if c in view.columns]
+            mask = pd.Series(False, index=view.index)
+            for c in cols_search:
+                mask = mask | view[c].astype(str).str.contains(q, case=False, na=False)
+            view = view[mask]
+
+        st.caption(f"Menampilkan **{len(view):,}** dari **{len(npbg_df):,}** baris item — "
+                   f"**{view['No NPBG'].nunique():,}** NPBG, total qty **{view['Kuantitas'].sum():,.0f}**.")
+
+        show_cols = [c for c in NPBG_DISPLAY_COLUMNS if c in view.columns]
+        display = view[show_cols].copy()
+        if "Tgl NPBG" in display.columns:
+            display["Tgl NPBG"] = display["Tgl NPBG"].dt.strftime("%Y-%m-%d")
+        st.dataframe(display, use_container_width=True, hide_index=True, height=430)
+
+        st.download_button(
+            "⬇️ Download CSV (sesuai filter)",
+            data=_cached_npbg_csv(view[show_cols]),
+            file_name="npbg_export.csv", mime="text/csv", key="npbg_csv_download",
+        )
+
+    debug = st.session_state.npbg_debug
+    if debug:
+        with st.expander("🐞 Debug NPBG — sheet, header, kolom yang terdeteksi"):
+            st.write("Sheet pada workbook:", debug.get("all_sheets"))
+            st.write("Sheet yang dipakai:", debug.get("sheet"))
+            st.write("Baris header (Excel):", debug.get("header_row"))
+            st.write("Kolom terdeteksi:", debug.get("columns"))
+
+
+def render_no_master_view():
+    """Kalau master inventory belum diupload tapi PPB/NPBG sudah — tampilkan itu saja."""
+    st.info(
+        "Data inventory master belum diupload — menampilkan data transaksi saja. "
+        "Upload **Excel Inventory** di sidebar untuk dashboard stok lengkap."
+    )
+    available = []
+    if st.session_state.ppb_df is not None:
+        available.append((
+            "📋 PPB", "Permintaan Pembelian Barang — apa yang diminta untuk dibeli.",
+            lambda: render_ppb_view(st.session_state.ppb_df),
+        ))
+    if st.session_state.npbg_df is not None:
+        available.append((
+            "📤 NPBG", "Nota Pengeluaran Barang Gudang — barang yang keluar dari gudang.",
+            lambda: render_npbg_view(st.session_state.npbg_df),
+        ))
+    if len(available) == 1:
+        label, subtitle, renderer = available[0]
+        render_section_header(label, subtitle)
+        renderer()
+    else:
+        for tab, (label, subtitle, renderer) in zip(st.tabs([lbl for lbl, _, _ in available]), available):
+            with tab:
+                render_section_header(label, subtitle)
+                renderer()
 
 
 def main():
@@ -604,16 +938,44 @@ def main():
         f'</div>',
         unsafe_allow_html=True,
     )
-    uploaded = st.sidebar.file_uploader("Upload Excel Inventory", type=["xlsx", "xls"])
-    st.sidebar.download_button(
-        "📥 Download Template Excel",
-        data=_cached_template_bytes(),
-        file_name="template_stockwise.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        help="Belum punya file? Ini template kosong yang formatnya udah sesuai.",
-        key="template_download_sidebar",
+    st.sidebar.header("📤 Upload Data")
+    st.sidebar.caption("Upload salah satu atau semuanya — tiap file berdiri sendiri.")
+
+    uploaded = st.sidebar.file_uploader(
+        "1. Excel Inventory", type=["xlsx", "xls"],
+        help="Data master barang & stok. Membuka tab Dashboard, Data Inventory, Procurement, Export.",
     )
+    if st.session_state.df is not None:
+        st.sidebar.caption(f"✅ **{st.session_state.file_name}** — {len(st.session_state.df):,} barang")
+    else:
+        st.sidebar.download_button(
+            "📥 Belum punya? Download template",
+            data=_cached_template_bytes(),
+            file_name="template_stockwise.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="template_download_sidebar",
+        )
+
+    uploaded_ppb = st.sidebar.file_uploader(
+        "2. Excel PPB", type=["xlsx", "xls"], key="ppb_uploader",
+        help="Permintaan Pembelian Barang (mis. `1. PPB - RI.xlsx`). Membuka tab 📋 PPB.",
+    )
+    handle_ppb_upload(uploaded_ppb)
+    if st.session_state.ppb_df is not None:
+        st.sidebar.caption(
+            f"✅ **{st.session_state.ppb_file_name}** — {st.session_state.ppb_df['No PPB'].nunique():,} PPB"
+        )
+
+    uploaded_npbg = st.sidebar.file_uploader(
+        "3. Excel NPBG", type=["xlsx", "xls"], key="npbg_uploader",
+        help="Nota Pengeluaran Barang Gudang (mis. `2. NPBG.xlsx`) — barang keluar. Membuka tab 📤 NPBG.",
+    )
+    handle_npbg_upload(uploaded_npbg)
+    if st.session_state.npbg_df is not None:
+        st.sidebar.caption(
+            f"✅ **{st.session_state.npbg_file_name}** — {st.session_state.npbg_df['No NPBG'].nunique():,} NPBG"
+        )
 
     if uploaded is not None:
         signature = f"{uploaded.name}-{uploaded.size}"
@@ -645,17 +1007,21 @@ def main():
             st.toast(f"Berhasil memuat {len(df):,} barang dari '{uploaded.name}'.", icon="✅")
 
     if st.session_state.df is None:
+        if st.session_state.ppb_df is not None or st.session_state.npbg_df is not None:
+            render_no_master_view()
+            st.stop()
         render_welcome()
         st.stop()
 
     full_df = st.session_state.df
-    st.sidebar.caption(f"📄 **{st.session_state.file_name}** — {len(full_df):,} barang")
     st.sidebar.divider()
 
     filters = render_sidebar(full_df)
     filtered_view = apply_filters(full_df, filters)
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "🗂️ Data Inventory", "🚚 Procurement", "⬇️ Export"])
+    tab1, tab2, tab3, tab5, tab6, tab4 = st.tabs(
+        ["📊 Dashboard", "🗂️ Data Inventory", "🚚 Procurement", "📋 PPB", "📤 NPBG", "⬇️ Export"]
+    )
 
     with tab2:
         render_section_header(
@@ -825,6 +1191,20 @@ def main():
             )
             with st.container(border=True):
                 st.dataframe(styled, use_container_width=True, hide_index=True)
+
+    with tab5:
+        render_section_header(
+            "PPB — Permintaan Pembelian Barang",
+            "Upload file PPB di sidebar untuk melihat daftar permintaan pembelian.",
+        )
+        render_ppb_view(st.session_state.ppb_df)
+
+    with tab6:
+        render_section_header(
+            "NPBG — Nota Pengeluaran Barang Gudang",
+            "Upload file NPBG di sidebar untuk melihat riwayat barang keluar gudang.",
+        )
+        render_npbg_view(st.session_state.npbg_df)
 
     with tab4:
         render_section_header(

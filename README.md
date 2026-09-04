@@ -9,6 +9,7 @@ Dashboard inventory berbasis **Python + Streamlit + Pandas + Plotly**. Upload fi
 - [Menjalankan Secara Lokal](#menjalankan-secara-lokal)
 - [Download Template](#download-template)
 - [Upload Excel](#upload-excel)
+- [Upload PPB & NPBG (tab PPB / NPBG)](#upload-ppb--npbg-tab-ppb--npbg)
 - [Skema Data (Kolom Excel)](#skema-data-kolom-excel)
 - [Cara Membaca Dashboard](#cara-membaca-dashboard)
 - [Rumus Perhitungan — Detail Lengkap](#rumus-perhitungan--detail-lengkap)
@@ -40,12 +41,14 @@ Tidak ada framework frontend terpisah (React/Vue dst.) — satu file `app.py` di
 
 ```text
 STOCKWISE/
-├── app.py                     # entry point: page config, CSS, sidebar, 4 tab, wiring reaktif
+├── app.py                     # entry point: page config, CSS, sidebar, 6 tab (Dashboard/Data Inventory/Procurement/PPB/NPBG/Export), wiring reaktif
 ├── requirements.txt
 ├── assets/logo.png             # logo aplikasi (di-embed sebagai base64)
 ├── data/                       # (opsional) tempat menaruh file Excel contoh
 ├── utils/
 │   ├── excel_handler.py        # deteksi sheet & baris header, fuzzy-match kolom, parsing "STOK 15 PCS", export & template Excel
+│   ├── ppb_handler.py          # parser file PPB (sheet PPB): deteksi header, buang baris kosong, ringkasan
+│   ├── npbg_handler.py         # parser file NPBG (sheet NPBG): idem — barang keluar gudang
 │   ├── pdf_export.py           # generator laporan PDF (KPI, tabel barang, Procurement Priority) via ReportLab
 │   ├── calculations.py         # pipeline reaktif: Selisih, Status, Defisit, Priority Score/Level
 │   ├── insights.py             # generator teks insight otomatis (rule-based)
@@ -80,6 +83,47 @@ Belum punya file, atau ingin memastikan format Excel Anda sesuai? Klik **📥 Do
 6. Jika ada sheet **"Dropdown List"**, pilihannya (Kategori Induk/Anak 1-3, UoM) otomatis mengisi pilihan selectbox di tabel edit, digabung dengan nilai yang sudah ada di data.
 7. Jika kolom wajib (`Kode Barang`, `Deskripsi Barang`, `Safety Stock`, `Sisa Stok`) tetap tidak ditemukan setelah pencocokan otomatis, muncul pesan error jelas — termasuk sheet & baris header yang terdeteksi dan daftar kolom yang berhasil dibaca — tanpa crash.
 8. Buka expander **🐞 Debug Excel** di tab Data Inventory untuk melihat sheet yang dipakai, baris header, kolom yang terdeteksi, dan pilihan dropdown yang terbaca.
+
+## Upload PPB & NPBG (tab PPB / NPBG)
+
+Di sidebar ada **2 upload tambahan** selain Excel Inventory:
+
+| Upload | File | Isi | Tab |
+|---|---|---|---|
+| **Upload Excel PPB** | mis. `1. PPB - RI.xlsx` | *Permintaan Pembelian Barang* — barang yang diminta untuk dibeli | **📋 PPB** |
+| **Upload Excel NPBG** | mis. `2. NPBG.xlsx` | *Nota Pengeluaran Barang Gudang* — barang yang **keluar** dari gudang | **📤 NPBG** |
+
+Keduanya terpisah dari upload inventory dan **bisa dibuka tanpa data inventory** — kalau hanya
+PPB/NPBG yang diupload, aplikasi langsung menampilkan tab-nya.
+
+**Cara parser bekerja (sama untuk PPB & NPBG):**
+
+- Otomatis memakai sheet bernama **PPB** / **NPBG**, mencari baris header (yang memuat kolom
+  *No PPB* / *No NPBG*), dan membuang baris kosong. Sheet asli mendeklarasikan range yang
+  sangat besar (ribuan baris kosong) dan kolom rollup memakai *array-formula* — baris item
+  asli dikenali dari **No dokumen + Deskripsi Barang** yang sama-sama terisi.
+- Nama kolom boleh sedikit beda (mis. `Nomor PPB`, `Qty`, `Jenis NPBG`) — dicocokkan otomatis.
+- Satu No PPB / No NPBG bisa punya banyak baris (satu baris per item).
+
+**Kolom yang dibaca:**
+
+- PPB: `Tgl PPB`, `No PPB`, `Deskripsi Barang`, `Kuantitas`, `Satuan`, `Peminta`, `Divisi`,
+  `Status`, `Keterangan`. Wajib: `No PPB`, `Deskripsi Barang`.
+- NPBG: `Tgl NPBG`, `No NPBG`, `Tipe NPBG`, `Klasifikasi`, `Deskripsi Barang`, `Kuantitas`,
+  `Satuan`, `Peminta`, `Divisi`, `Pelanggan`, `Nama Proyek`, `No Seri / Nopol`,
+  `Dikeluarkan Oleh`, `Keterangan`. Wajib: `No NPBG`, `Deskripsi Barang`.
+
+**Isi tab:**
+
+- **📋 PPB**: KPI (jumlah PPB, baris item, total kuantitas, rentang tanggal), sebaran status,
+  PPB per divisi, tabel + filter (Status / Divisi / cari No PPB · Deskripsi · Peminta) +
+  download CSV, expander **🐞 Debug PPB**.
+- **📤 NPBG**: KPI (jumlah NPBG, baris item keluar, total kuantitas keluar, rentang tanggal),
+  **grafik barang keluar per bulan**, sebaran per Klasifikasi & per Divisi pemakai, split
+  Tipe (Penjualan vs Non-Penjualan), tabel + filter (Klasifikasi / Divisi / Tipe / cari) +
+  download CSV, expander **🐞 Debug NPBG**.
+
+Parser: `utils/ppb_handler.py`, `utils/npbg_handler.py`.
 
 ## Skema Data (Kolom Excel)
 
