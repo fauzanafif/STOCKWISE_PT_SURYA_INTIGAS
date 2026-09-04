@@ -706,20 +706,206 @@ def _txn_month_bar(per_month: dict):
     return fig
 
 
-def _txn_kpi_cards(cards: list):
-    """KPI cards in the same style as the Dashboard (`.sw-kpi-*`). `cards` =
-    list of (icon, label, value, sub)."""
+def _kpi_cards(cards: list, accent: str = SERIES_BLUE):
+    """KPI cards in the app style (`.sw-kpi-*`). `cards` = list of
+    (icon, label, value, sub) or (icon, label, value, sub, color)."""
     html = ['<div class="sw-kpi-grid">']
-    for icon, label, value, sub in cards:
+    for card in cards:
+        icon, label, value, sub = card[:4]
+        color = card[4] if len(card) > 4 else accent
         html.append(
             f'<div class="sw-kpi-card">'
-            f'<div class="sw-kpi-icon" style="background:{SERIES_BLUE}1a;color:{SERIES_BLUE};">{icon}</div>'
+            f'<div class="sw-kpi-icon" style="background:{color}1a;color:{color};">{icon}</div>'
             f'<div class="sw-kpi-body"><div class="sw-kpi-label">{label}</div>'
-            f'<div class="sw-kpi-value" style="color:{SERIES_BLUE};">{value}</div>'
+            f'<div class="sw-kpi-value" style="color:{color};">{value}</div>'
             f'<div class="sw-kpi-sub">{sub}</div></div></div>'
         )
     html.append("</div>")
     st.markdown("".join(html), unsafe_allow_html=True)
+
+
+# backward-compat alias
+_txn_kpi_cards = _kpi_cards
+
+
+def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
+    """Satu halaman ringkasan semua data yang sudah diupload — dibuat sesederhana
+    mungkin supaya langsung dipahami orang awam."""
+    loaded = []
+    if inv_df is not None:
+        loaded.append("Inventory")
+    if ppb_df is not None:
+        loaded.append("PPB")
+    if npbg_df is not None:
+        loaded.append("NPBG")
+    render_section_header(
+        "Dashboard",
+        "Ringkasan semua data yang sudah diupload — dalam satu layar. Data aktif: "
+        + ", ".join(loaded) + ".",
+    )
+
+    # ---------- RINGKASAN UTAMA (KPI) ----------
+    cards = []
+    if inv_df is not None:
+        total = len(inv_df)
+        perlu_dibeli = int((inv_df["Status"] == STATUS_TIDAK_AMAN).sum())
+        habis = int((inv_df["Sisa Stok"].fillna(0) == 0).sum())
+        aman = int((inv_df["Status"] == "AMAN").sum())
+        sehat = round(aman / total * 100, 1) if total else 0
+        cards += [
+            ("📦", "Total Barang", f"{total:,}", "jenis barang di data", SERIES_BLUE),
+            ("🛒", "Perlu Dibeli", f"{perlu_dibeli:,}", "stok di bawah batas aman", COLOR_TIDAK_AMAN),
+            ("⛔", "Stok Habis", f"{habis:,}", "sisa stok = 0", COLOR_TIDAK_AMAN if habis else COLOR_AMAN),
+            ("💚", "Kondisi Stok", f"{sehat}%", "barang yang stoknya aman",
+             COLOR_AMAN if sehat >= 80 else (COLOR_WARNING if sehat >= 50 else COLOR_TIDAK_AMAN)),
+        ]
+    if ppb_df is not None:
+        s = ppb_summary(ppb_df)
+        belum = int((ppb_df["Status"].str.lower() != "completed").sum()) if "Status" in ppb_df.columns else 0
+        cards += [
+            ("📋", "Jumlah PPB", f"{s['total_ppb']:,}", "permintaan pembelian", "#7b61c9"),
+            ("⏳", "PPB Belum Selesai", f"{belum:,}", "baris item belum 'Completed'", COLOR_WARNING),
+        ]
+    if npbg_df is not None:
+        s = npbg_summary(npbg_df)
+        nm = max(len(s["per_month"]), 1)
+        cards += [
+            ("📤", "Barang Keluar", f"{s['total_qty']:,.0f}", "total kuantitas (NPBG)", "#eb6834"),
+            ("📅", "Rata-rata / Bulan", f"{s['total_qty'] / nm:,.0f}", f"dari {nm} bulan", "#eb6834"),
+        ]
+    _kpi_cards(cards)
+
+    # ---------- APA YANG PERLU DILAKUKAN ----------
+    todo = []
+    if inv_df is not None:
+        unsafe = inv_df[inv_df["Status"] == STATUS_TIDAK_AMAN]
+        if not unsafe.empty:
+            todo.append(("error", f"🛒 **{len(unsafe):,} barang** stoknya di bawah batas aman — "
+                                  f"perlu dibeli. Lihat daftarnya di bawah atau di tab **Procurement**."))
+        habis_df = inv_df[inv_df["Sisa Stok"].fillna(0) == 0]
+        if not habis_df.empty:
+            todo.append(("error", f"⛔ **{len(habis_df):,} barang** stoknya benar-benar habis (0)."))
+    if ppb_df is not None and "Status" in ppb_df.columns:
+        belum = int((ppb_df["Status"].str.lower() != "completed").sum())
+        if belum:
+            todo.append(("warning", f"📋 **{belum:,} baris PPB** masih diproses (belum *Completed*). "
+                                    f"Detail di tab **Data PPB**."))
+    if not todo:
+        todo.append(("success", "✅ Tidak ada yang mendesak dari data saat ini."))
+    st.write("")
+    render_insight_cards(todo)
+
+    # ---------- KONDISI STOK ----------
+    if inv_df is not None:
+        st.divider()
+        render_section_header("Kondisi Stok", "Berapa banyak barang yang aman, dan yang stoknya menipis.")
+        c1, c2 = st.columns([1, 1.4])
+        with c1:
+            render_chart("Aman vs Perlu Dibeli", "Proporsi barang berdasarkan kondisi stok.",
+                         status_donut(inv_df))
+        with c2:
+            render_chart("10 Barang Paling Kurang Stok", "Selisih terbesar dari batas amannya.",
+                         top_deficit_bar(inv_df),
+                         empty_message="✅ Semua barang stoknya di atas batas aman.")
+
+        # Bar kesehatan sederhana — satu angka yang gampang dibaca orang awam,
+        # tanpa deretan KPI teknis (BEP, total safety stock, dll) yang ada di
+        # tab Data Inventory.
+        total = len(inv_df)
+        aman = int((inv_df["Status"] == "AMAN").sum())
+        pct = round(aman / total * 100, 1) if total else 0.0
+        if pct >= 80:
+            bar_color, word = COLOR_AMAN, "Sehat"
+        elif pct >= 50:
+            bar_color, word = COLOR_WARNING, "Perlu Perhatian"
+        else:
+            bar_color, word = COLOR_TIDAK_AMAN, "Kritis"
+        st.markdown(
+            f"""
+            <div class="sw-health">
+              <div class="sw-health-label">
+                <span>💚 Kesehatan Stok Keseluruhan</span>
+                <span class="sw-health-pct" style="color:{bar_color};">{pct}% Aman — {word}</span>
+              </div>
+              <div class="sw-health-track">
+                <div class="sw-health-fill" style="width:{pct}%; background:{bar_color};"></div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        render_chart(
+            "Stok Sekarang vs Batas Aman",
+            "Batang biru di bawah garis batas aman = barang itu perlu dibeli.",
+            stock_vs_safety_bar(inv_df),
+        )
+
+        # ---------- YANG PERLU SEGERA DIBELI ----------
+        unsafe = inv_df[inv_df["Status"] == STATUS_TIDAK_AMAN].sort_values("Priority Score", ascending=False)
+        if not unsafe.empty:
+            st.divider()
+            render_section_header("Yang Perlu Segera Dibeli",
+                                  f"{len(unsafe):,} barang, ditampilkan 8 paling mendesak. Semua ada di tab Procurement.")
+            simple = unsafe.head(8).copy()
+            tbl = pd.DataFrame({
+                "Barang": simple["Deskripsi Barang"],
+                "Gudang": simple.get("Letak Gudang", ""),
+                "Stok Sekarang": simple["Sisa Stok"].round(0).astype("Int64"),
+                "Batas Aman": simple["Safety Stock"].round(0).astype("Int64"),
+                "Kurang": simple["Defisit"].round(0).astype("Int64"),
+                "Seberapa Mendesak": simple["Priority Level"].map(
+                    {"HIGH": "🔴 Sangat mendesak", "MEDIUM": "🟠 Mendesak", "LOW": "🟢 Bisa ditunda"}),
+                "Saran": simple["Rekomendasi"],
+            })
+            st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+    # ---------- PPB ----------
+    if ppb_df is not None:
+        st.divider()
+        render_section_header("Permintaan Pembelian (PPB)", "Status permintaan pembelian barang. Detail di tab Data PPB.")
+        s = ppb_summary(ppb_df)
+        cc1, cc2 = st.columns([1.4, 1])
+        with cc1:
+            render_chart("Status PPB", "Jumlah baris item per status.", _txn_bar(s["per_status"], "Baris item"))
+        with cc2:
+            done = s["per_status"].get("Completed", 0)
+            total_rows = s["total_item"]
+            st.metric("Sudah Selesai (Completed)", f"{done:,}", f"dari {total_rows:,} baris item")
+            st.metric("Divisi Peminta Terbanyak",
+                      max(s["per_divisi"], key=s["per_divisi"].get) if s["per_divisi"] else "-")
+
+    # ---------- NPBG ----------
+    if npbg_df is not None:
+        st.divider()
+        render_section_header("Barang Keluar Gudang (NPBG)",
+                              "Berapa banyak barang keluar tiap bulan. Detail di tab Data NPBG.")
+        s = npbg_summary(npbg_df)
+        if s["per_month"]:
+            render_chart("Barang Keluar per Bulan", "Total kuantitas NPBG tiap bulan.",
+                         _txn_month_bar(s["per_month"]))
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            render_chart("Untuk Apa Barang Dikeluarkan (Top 10)", "", _txn_bar(s["per_klasifikasi"], "Baris item"))
+        with cc2:
+            render_chart("Divisi Pemakai Terbanyak (Top 10)", "", _txn_bar(s["per_divisi"], "Baris item"))
+
+    # ---------- ANALISA DETAIL (opsional) ----------
+    if inv_df is not None:
+        st.divider()
+        with st.expander("📈 Analisa stok lebih detail (per gudang & kategori)"):
+            g1, g2 = st.columns(2)
+            with g1:
+                render_chart("Per Gudang — Aman / Tidak Aman", "", warehouse_status_bar(inv_df))
+                render_chart("Per Gudang — Stok vs Batas Aman", "", warehouse_stock_bar(inv_df))
+            with g2:
+                render_chart("Per Kategori — Aman / Tidak Aman", "", category_status_bar(inv_df))
+                render_chart("Lead Time vs Kekurangan Stok",
+                             "Lead time lama + kurang banyak = paling perlu diprioritaskan.",
+                             lead_time_scatter(inv_df))
+            st.write("")
+            render_section_header("Catatan Otomatis", "")
+            render_insight_cards(generate_insights(inv_df, lead_time_threshold))
 
 
 def _txn_empty_state(judul: str, file_hint: str, sheet: str, kolom_kunci: str):
@@ -925,30 +1111,32 @@ def render_npbg_view(npbg_df: pd.DataFrame):
 
 
 def render_no_master_view():
-    """Kalau master inventory belum diupload tapi PPB/NPBG sudah — tampilkan itu saja."""
+    """Master inventory belum diupload tapi PPB/NPBG sudah — dashboard gabungan
+    tetap tampil (bagian PPB/NPBG saja), plus tab detail masing-masing."""
     st.info(
-        "Data inventory master belum diupload — menampilkan data transaksi saja. "
-        "Upload **Excel Inventory** di sidebar untuk dashboard stok lengkap."
+        "Data inventory master belum diupload — dashboard menampilkan Data PPB & Data NPBG saja. "
+        "Upload **Excel Inventory** di sidebar untuk ringkasan stok yang lengkap."
     )
-    available = []
+
+    tabs_spec = [("📊 Dashboard", None)]
     if st.session_state.ppb_df is not None:
-        available.append((
-            "📋 PPB", "Permintaan Pembelian Barang — apa yang diminta untuk dibeli.",
+        tabs_spec.append((
+            "📋 Data PPB",
             lambda: render_ppb_view(st.session_state.ppb_df),
         ))
     if st.session_state.npbg_df is not None:
-        available.append((
-            "📤 NPBG", "Nota Pengeluaran Barang Gudang — barang yang keluar dari gudang.",
+        tabs_spec.append((
+            "📤 Data NPBG",
             lambda: render_npbg_view(st.session_state.npbg_df),
         ))
-    if len(available) == 1:
-        label, subtitle, renderer = available[0]
-        render_section_header(label, subtitle)
-        renderer()
-    else:
-        for tab, (label, subtitle, renderer) in zip(st.tabs([lbl for lbl, _, _ in available]), available):
-            with tab:
-                render_section_header(label, subtitle)
+
+    for tab, (label, renderer) in zip(st.tabs([lbl for lbl, _ in tabs_spec]), tabs_spec):
+        with tab:
+            if renderer is None:
+                render_unified_dashboard(
+                    None, st.session_state.ppb_df, st.session_state.npbg_df, None
+                )
+            else:
                 renderer()
 
 
@@ -1062,7 +1250,7 @@ def main():
     filtered_view = apply_filters(full_df, filters)
 
     tab1, tab2, tab3, tab5, tab6, tab4 = st.tabs(
-        ["📊 Dashboard", "🗂️ Data Inventory", "🚚 Procurement", "📋 PPB", "📤 NPBG", "⬇️ Export"]
+        ["📊 Dashboard", "🗂️ Data Inventory", "🚚 Procurement", "📋 Data PPB", "📤 Data NPBG", "⬇️ Export"]
     )
 
     with tab2:
@@ -1095,6 +1283,8 @@ def main():
                     st.session_state.hidden_columns = []
                     st.rerun()
 
+        render_kpis(filtered_view)
+
         debug_info = st.session_state.debug_info
         if debug_info:
             with st.expander("🐞 Debug Excel"):
@@ -1121,58 +1311,12 @@ def main():
     filtered_final = apply_filters(full_df, filters)
 
     with tab1:
-        render_section_header("Ringkasan Inventory", "Kondisi stok berdasarkan filter yang aktif.")
-        render_kpis(filtered_final)
-
-        st.divider()
-        render_section_header("🔎 Kondisi Inventory Saat Ini", "Apa yang aman, apa yang tidak, dan seberapa parah.")
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            render_chart("Status Inventory", "Proporsi barang AMAN vs TIDAK AMAN.", status_donut(filtered_final))
-        with c2:
-            render_chart(
-                "Top Barang dengan Defisit Terbesar",
-                "Barang paling kurang dari safety stock-nya.",
-                top_deficit_bar(filtered_final),
-                empty_message="✅ Tidak ada barang dengan defisit stok.",
-            )
-
-        render_chart(
-            "Stok vs Safety Stock",
-            "Perbandingan langsung: stok saat ini vs batas amannya.",
-            stock_vs_safety_bar(filtered_final),
+        render_unified_dashboard(
+            filtered_final,
+            st.session_state.ppb_df,
+            st.session_state.npbg_df,
+            st.session_state.lead_time_threshold,
         )
-
-        st.divider()
-        render_section_header("📍 Analisis per Lokasi & Kategori", "Di gudang atau kategori mana masalah paling banyak.")
-        c3, c4 = st.columns(2)
-        with c3:
-            render_chart(
-                "Inventory per Gudang — Status",
-                "Jumlah barang aman/tidak aman di tiap gudang.",
-                warehouse_status_bar(filtered_final),
-            )
-            render_chart(
-                "Inventory per Gudang — Stok vs Safety Stock",
-                "Total stok vs total safety stock per gudang.",
-                warehouse_stock_bar(filtered_final),
-            )
-        with c4:
-            render_chart(
-                "Inventory per Kategori Induk",
-                "Jumlah barang aman/tidak aman per kategori.",
-                category_status_bar(filtered_final),
-            )
-            render_chart(
-                "Lead Time vs Defisit",
-                "Barang lead time tinggi + defisit besar = prioritas procurement.",
-                lead_time_scatter(filtered_final),
-            )
-
-        st.divider()
-        render_section_header("💡 Inventory Insight", "Ringkasan singkat dari data yang lagi ditampilkan.")
-        insights = generate_insights(filtered_final, st.session_state.lead_time_threshold)
-        render_insight_cards(insights)
 
     with tab3:
         render_section_header(
@@ -1236,15 +1380,15 @@ def main():
 
     with tab5:
         render_section_header(
-            "PPB — Permintaan Pembelian Barang",
-            "Upload file PPB di sidebar untuk melihat daftar permintaan pembelian.",
+            "Data PPB — Permintaan Pembelian Barang",
+            "Detail permintaan pembelian barang. Ringkasannya ada di tab Dashboard.",
         )
         render_ppb_view(st.session_state.ppb_df)
 
     with tab6:
         render_section_header(
-            "NPBG — Nota Pengeluaran Barang Gudang",
-            "Upload file NPBG di sidebar untuk melihat riwayat barang keluar gudang.",
+            "Data NPBG — Nota Pengeluaran Barang Gudang",
+            "Detail riwayat barang keluar gudang. Ringkasannya ada di tab Dashboard.",
         )
         render_npbg_view(st.session_state.npbg_df)
 
