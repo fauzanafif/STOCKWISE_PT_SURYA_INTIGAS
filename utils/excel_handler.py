@@ -46,6 +46,9 @@ CALCULATED_COLUMNS = [
     "Priority Score",
     "Priority Level",
     "Rekomendasi",
+    # Diisi terpisah (utils/npbg_match) dari file NPBG, bukan oleh recalculate —
+    # tercantum di sini supaya recalculate tidak memaksa nilainya jadi teks.
+    "NPBG",
 ]
 
 REFERENCE_COLUMNS = ["Blueprint IMG", "Blueprint Detail PDF", "Blueprint 3D View"]

@@ -55,6 +55,14 @@ def build_column_config(df, extra_options=None):
         "Priority Score": st.column_config.NumberColumn("Priority Score", disabled=True, width="small"),
         "Priority Level": st.column_config.TextColumn("Priority Level", disabled=True, width="small"),
         "Rekomendasi": st.column_config.TextColumn("Rekomendasi", disabled=True, width="large"),
+        "NPBG": st.column_config.NumberColumn(
+            "NPBG",
+            help="Jumlah baris NPBG untuk barang ini (dicocokkan dari file NPBG "
+            "berdasarkan Deskripsi Barang). Kosong = tidak ada pasangan / bukan status AMAN.",
+            format="%d",
+            disabled=True,
+            width="small",
+        ),
     }
     for col in REFERENCE_COLUMNS:
         config[col] = st.column_config.TextColumn(col, disabled=True, width="medium")

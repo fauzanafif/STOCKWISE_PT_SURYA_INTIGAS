@@ -23,6 +23,7 @@ from utils.excel_handler import build_template_bytes, load_dropdown_options, loa
 from utils.insights import generate_insights
 from utils.pdf_export import build_pdf_bytes
 from utils.npbg_handler import NPBG_DISPLAY_COLUMNS, load_npbg, npbg_summary
+from utils.npbg_match import attach_npbg_column, build_count_map
 from utils.ppb_handler import PPB_DISPLAY_COLUMNS, load_ppb, ppb_summary
 from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING, SERIES_BLUE
 
@@ -535,6 +536,31 @@ def merge_edits(full_df: pd.DataFrame, filtered_view: pd.DataFrame, edited_view:
     return full_df.reset_index(drop=True)
 
 
+@st.cache_data(show_spinner=False)
+def _npbg_count_map(npbg_descriptions: tuple, aman_descriptions: tuple) -> dict:
+    """Fuzzy-match tiap deskripsi barang AMAN ke baris NPBG (dicache: hanya
+    dihitung ulang kalau daftar deskripsi NPBG atau himpunan barang AMAN
+    berubah, bukan tiap kali tabel diedit)."""
+    return build_count_map(aman_descriptions, npbg_descriptions)
+
+
+def with_npbg_column(inv_df: pd.DataFrame) -> pd.DataFrame:
+    """Tambahkan kolom NPBG ke inventory df, pakai hasil matching yang dicache."""
+    npbg_df = st.session_state.npbg_df
+    if (
+        inv_df is None
+        or npbg_df is None
+        or npbg_df.empty
+        or "Status" not in inv_df.columns
+        or "Deskripsi Barang" not in inv_df.columns
+        or "Deskripsi Barang" not in npbg_df.columns
+    ):
+        return attach_npbg_column(inv_df, None)
+    aman_desc = tuple(sorted({str(x) for x in inv_df.loc[inv_df["Status"] == "AMAN", "Deskripsi Barang"]}))
+    count_map = _npbg_count_map(tuple(npbg_df["Deskripsi Barang"].tolist()), aman_desc)
+    return attach_npbg_column(inv_df, count_map=count_map)
+
+
 def _md_inline(text: str) -> str:
     """Minimal Markdown→HTML for the inline strings we build (`**bold**`,
     `*italic*`). The insight cards are injected as raw HTML, so Streamlit's
@@ -664,6 +690,7 @@ def process_master_upload(uploaded):
         return error
     st.session_state.lead_time_threshold = suggest_lead_time_threshold(df)
     df = recalculate(df, st.session_state.lead_time_threshold)
+    df = with_npbg_column(df)
     st.session_state.df = df
     st.session_state.file_signature = _sig(uploaded)
     st.session_state.file_name = uploaded.name
@@ -1219,8 +1246,8 @@ def main():
     filters = render_sidebar(full_df)
     filtered_view = apply_filters(full_df, filters)
 
-    tab1, tab2, tab3, tab5, tab6, tab4 = st.tabs(
-        ["📊 Dashboard", "🗂️ Data Inventory", "🚚 Procurement", "📋 Data PPB", "📤 Data NPBG", "⬇️ Export"]
+    tab1, tab2, tab5, tab6, tab3, tab4 = st.tabs(
+        ["📊 Dashboard", "🗂️ Data Inventory", "📋 Data PPB", "📤 Data NPBG", "🚚 Procurement", "⬇️ Export"]
     )
 
     with tab2:
@@ -1274,6 +1301,9 @@ def main():
         )
         full_df = merge_edits(full_df, filtered_view, edited_view)
         full_df = recalculate(full_df, st.session_state.lead_time_threshold)
+        # NPBG dicocokkan ulang tiap rerun (di-cache): Status bisa berubah karena
+        # edit, dan file NPBG bisa baru diupload.
+        full_df = with_npbg_column(full_df)
         st.session_state.df = full_df
 
     filtered_final = apply_filters(full_df, filters)
