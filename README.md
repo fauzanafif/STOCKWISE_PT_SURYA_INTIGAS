@@ -75,7 +75,17 @@ Belum punya file, atau ingin memastikan format Excel Anda sesuai? Klik **📥 Do
 
 ## Upload Excel
 
-1. Buka sidebar **Data** → **Upload Excel Inventory**.
+Sidebar **📤 Upload Data** punya 3 slot: **1. Excel Inventory**, **2. Excel PPB**, **3. Excel NPBG**.
+
+- File yang dipilih **tidak langsung diproses**. Muncul status `⏳ menunggu diproses` per slot.
+- Klik tombol **🚀 Proses N file** untuk memproses (dipakai kalau cuma mau 1–2 file).
+- Kalau **ketiga slot terisi**, file otomatis diproses tanpa perlu klik tombol.
+- Setelah diproses, status jadi `✅ nama-file — ringkasan`. Ganti file di slot yang sama →
+  status kembali `⏳` dan tombol/otomatisasi jalan lagi.
+
+Detail parser Inventory:
+
+1. Buka sidebar **📤 Upload Data** → slot **1. Excel Inventory**.
 2. Jika workbook Anda punya beberapa sheet (mis. `Data`, `Dropdown List`, `cetak`, `Sheet2`), aplikasi otomatis memakai sheet bernama **"Data"** sebagai dataset utama — sheet `cetak`/`Sheet2`/`Dropdown List` tidak pernah dibaca sebagai data inventory. Jika tidak ada sheet bernama "Data", aplikasi jatuh ke sheet pertama yang bukan salah satu dari ketiganya.
 3. Baris header **tidak harus di baris pertama** — aplikasi otomatis mencari baris yang memuat kolom "Kode Barang" (sampai 50 baris pertama sheet tersebut), jadi file dengan judul/baris kosong di atas header tetap terbaca.
 4. Nama kolom tidak harus persis sama — kolom seperti `Safety Stock` atau `SISA STOK (22/08/2026)` dikenali lewat pencocokan kata kunci (`SAFETY`+`STOCK`, `SISA`+`STOK`), begitu juga `√LT` dan `MIN PR`, jadi variasi penulisan/tanggal di nama kolom tidak masalah.

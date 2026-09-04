@@ -588,11 +588,12 @@ def render_welcome():
             )
 
     st.write("")
-    st.info("👈 Upload file Excel-nya dulu di sidebar sebelah kiri.")
+    st.info("👈 Pilih file Excel di sidebar, lalu klik **🚀 Proses**.")
     st.caption(
-        "Di sidebar ada 3 upload: **Excel Inventory** (data barang/stok), **Excel PPB** "
-        "(permintaan pembelian), dan **Excel NPBG** (barang keluar gudang). "
-        "Bisa salah satu dulu — PPB & NPBG juga bisa dibuka tanpa data inventory."
+        "Ada 3 slot: **Excel Inventory** (data barang/stok), **Excel PPB** (permintaan pembelian), "
+        "dan **Excel NPBG** (barang keluar gudang). File yang dipilih belum langsung diproses — "
+        "klik **Proses** untuk memproses, atau isi ketiga slot sekaligus supaya diproses otomatis. "
+        "Bisa 1 file saja; PPB & NPBG juga jalan tanpa data inventory."
     )
 
     st.markdown("##### Belum punya file? Pakai template ini aja:")
@@ -608,21 +609,52 @@ def render_welcome():
     )
 
 
+def _sig(f):
+    return None if f is None else f"{f.name}-{f.size}"
+
+
+def _is_pending(f, processed_sig):
+    """A staged file that hasn't been processed yet."""
+    return f is not None and _sig(f) != processed_sig
+
+
+def process_master_upload(uploaded):
+    """Parse the inventory master workbook into session_state (debounced on signature).
+    Returns an error string or None."""
+    if not _is_pending(uploaded, st.session_state.file_signature):
+        return None
+    with st.spinner("Membaca & memproses Excel Inventory..."):
+        df, error, debug_info = load_excel(uploaded)
+    st.session_state.debug_info = debug_info
+    if error:
+        # tandai file ini sudah dicoba supaya tidak diproses ulang tiap rerun
+        st.session_state.file_signature = _sig(uploaded)
+        return error
+    st.session_state.lead_time_threshold = suggest_lead_time_threshold(df)
+    df = recalculate(df, st.session_state.lead_time_threshold)
+    st.session_state.df = df
+    st.session_state.file_signature = _sig(uploaded)
+    st.session_state.file_name = uploaded.name
+    st.session_state.dropdown_options = load_dropdown_options(uploaded)
+    st.session_state.hidden_columns = []
+    st.session_state.pop("hidden_columns_picker", None)
+    st.toast(f"Inventory: {len(df):,} barang dari '{uploaded.name}'.", icon="✅")
+    return None
+
+
 def handle_ppb_upload(uploaded_ppb):
     """Parse an uploaded PPB workbook into session_state (debounced on file signature)."""
-    if uploaded_ppb is None:
-        return
-    signature = f"{uploaded_ppb.name}-{uploaded_ppb.size}"
-    if signature == st.session_state.ppb_signature:
+    if not _is_pending(uploaded_ppb, st.session_state.ppb_signature):
         return
     with st.spinner("Membaca file PPB..."):
         ppb_df, error, debug = load_ppb(uploaded_ppb)
     st.session_state.ppb_debug = debug
     if error:
+        st.session_state.ppb_signature = _sig(uploaded_ppb)
         st.sidebar.error(error)
         return
     st.session_state.ppb_df = ppb_df
-    st.session_state.ppb_signature = signature
+    st.session_state.ppb_signature = _sig(uploaded_ppb)
     st.session_state.ppb_file_name = uploaded_ppb.name
     st.toast(
         f"PPB dimuat: {ppb_df['No PPB'].nunique():,} PPB / {len(ppb_df):,} baris item.", icon="📋"
@@ -783,19 +815,17 @@ def render_ppb_view(ppb_df: pd.DataFrame):
 
 def handle_npbg_upload(uploaded_npbg):
     """Parse an uploaded NPBG workbook into session_state (debounced on signature)."""
-    if uploaded_npbg is None:
-        return
-    signature = f"{uploaded_npbg.name}-{uploaded_npbg.size}"
-    if signature == st.session_state.npbg_signature:
+    if not _is_pending(uploaded_npbg, st.session_state.npbg_signature):
         return
     with st.spinner("Membaca file NPBG..."):
         npbg_df, error, debug = load_npbg(uploaded_npbg)
     st.session_state.npbg_debug = debug
     if error:
+        st.session_state.npbg_signature = _sig(uploaded_npbg)
         st.sidebar.error(error)
         return
     st.session_state.npbg_df = npbg_df
-    st.session_state.npbg_signature = signature
+    st.session_state.npbg_signature = _sig(uploaded_npbg)
     st.session_state.npbg_file_name = uploaded_npbg.name
     st.toast(
         f"NPBG dimuat: {npbg_df['No NPBG'].nunique():,} NPBG / {len(npbg_df):,} baris item.", icon="📤"
@@ -939,72 +969,84 @@ def main():
         unsafe_allow_html=True,
     )
     st.sidebar.header("📤 Upload Data")
-    st.sidebar.caption("Upload salah satu atau semuanya — tiap file berdiri sendiri.")
+    st.sidebar.caption(
+        "Pilih file dulu — belum langsung diproses. Klik **Proses** di bawah, "
+        "atau isi ketiga slot sekaligus untuk proses otomatis."
+    )
 
     uploaded = st.sidebar.file_uploader(
         "1. Excel Inventory", type=["xlsx", "xls"],
         help="Data master barang & stok. Membuka tab Dashboard, Data Inventory, Procurement, Export.",
     )
-    if st.session_state.df is not None:
-        st.sidebar.caption(f"✅ **{st.session_state.file_name}** — {len(st.session_state.df):,} barang")
-    else:
+    uploaded_ppb = st.sidebar.file_uploader(
+        "2. Excel PPB", type=["xlsx", "xls"], key="ppb_uploader",
+        help="Permintaan Pembelian Barang (mis. `1. PPB - RI.xlsx`). Membuka tab 📋 PPB.",
+    )
+    uploaded_npbg = st.sidebar.file_uploader(
+        "3. Excel NPBG", type=["xlsx", "xls"], key="npbg_uploader",
+        help="Nota Pengeluaran Barang Gudang (mis. `2. NPBG.xlsx`) — barang keluar. Membuka tab 📤 NPBG.",
+    )
+
+    # --- status tiap slot: sudah diproses / dipilih tapi menunggu / kosong ---
+    slots = [
+        ("Inventory", uploaded, st.session_state.file_signature, st.session_state.df is not None,
+         st.session_state.file_name),
+        ("PPB", uploaded_ppb, st.session_state.ppb_signature, st.session_state.ppb_df is not None,
+         st.session_state.ppb_file_name),
+        ("NPBG", uploaded_npbg, st.session_state.npbg_signature, st.session_state.npbg_df is not None,
+         st.session_state.npbg_file_name),
+    ]
+    pending = [name for name, f, sig, _done, _n in slots if _is_pending(f, sig)]
+    n_filled = sum(1 for _n, f, *_ in slots if f is not None)
+
+    status_lines = []
+    for name, f, sig, done, fname in slots:
+        if _is_pending(f, sig):
+            status_lines.append(f"⏳ **{name}** — `{f.name}` menunggu diproses")
+        elif done:
+            status_lines.append(f"✅ **{name}** — `{fname}`")
+    if status_lines:
+        st.sidebar.markdown("  \n".join(status_lines))
+
+    # tombol proses kalau ada yang menunggu; auto-proses kalau ketiga slot terisi
+    auto = n_filled == 3 and bool(pending)
+    do_process = auto
+    if pending and not auto:
+        do_process = st.sidebar.button(
+            f"🚀 Proses {len(pending)} file ({', '.join(pending)})",
+            type="primary", use_container_width=True,
+        )
+    elif auto:
+        st.sidebar.caption("Ketiga file lengkap — memproses otomatis…")
+
+    master_error = None
+    if do_process:
+        master_error = process_master_upload(uploaded)
+        handle_ppb_upload(uploaded_ppb)
+        handle_npbg_upload(uploaded_npbg)
+        st.session_state["_last_master_error"] = master_error
+        st.rerun()  # segarkan sidebar (status ⏳ -> ✅) & badan halaman
+
+    master_error = st.session_state.pop("_last_master_error", None)
+    if master_error:
+        st.error(master_error)
+        di = st.session_state.debug_info or {}
+        if di.get("all_sheets"):
+            with st.expander("🐞 Debug Excel Inventory"):
+                st.write("Sheet terdeteksi:", di.get("all_sheets"))
+                st.write("Sheet yang dipilih:", di.get("sheet"))
+                st.write("Baris header:", di.get("header_row"))
+                st.write("Kolom terbaca:", di.get("columns"))
+
+    if st.session_state.df is None and st.session_state.ppb_df is None and st.session_state.npbg_df is None:
         st.sidebar.download_button(
-            "📥 Belum punya? Download template",
+            "📥 Belum punya file? Download template Inventory",
             data=_cached_template_bytes(),
             file_name="template_stockwise.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             key="template_download_sidebar",
         )
-
-    uploaded_ppb = st.sidebar.file_uploader(
-        "2. Excel PPB", type=["xlsx", "xls"], key="ppb_uploader",
-        help="Permintaan Pembelian Barang (mis. `1. PPB - RI.xlsx`). Membuka tab 📋 PPB.",
-    )
-    handle_ppb_upload(uploaded_ppb)
-    if st.session_state.ppb_df is not None:
-        st.sidebar.caption(
-            f"✅ **{st.session_state.ppb_file_name}** — {st.session_state.ppb_df['No PPB'].nunique():,} PPB"
-        )
-
-    uploaded_npbg = st.sidebar.file_uploader(
-        "3. Excel NPBG", type=["xlsx", "xls"], key="npbg_uploader",
-        help="Nota Pengeluaran Barang Gudang (mis. `2. NPBG.xlsx`) — barang keluar. Membuka tab 📤 NPBG.",
-    )
-    handle_npbg_upload(uploaded_npbg)
-    if st.session_state.npbg_df is not None:
-        st.sidebar.caption(
-            f"✅ **{st.session_state.npbg_file_name}** — {st.session_state.npbg_df['No NPBG'].nunique():,} NPBG"
-        )
-
-    if uploaded is not None:
-        signature = f"{uploaded.name}-{uploaded.size}"
-        if signature != st.session_state.file_signature:
-            with st.spinner("Membaca dan memproses file Excel..."):
-                df, error, debug_info = load_excel(uploaded)
-            st.session_state.debug_info = debug_info
-            if error:
-                st.error(error)
-                if debug_info.get("all_sheets"):
-                    with st.expander("🐞 Debug Excel"):
-                        st.write("Sheet terdeteksi:", debug_info.get("all_sheets"))
-                        st.write("Sheet yang dipilih:", debug_info.get("sheet"))
-                        st.write("Baris header:", debug_info.get("header_row"))
-                        st.write("Kolom terbaca:", debug_info.get("columns"))
-                st.stop()
-            st.session_state.lead_time_threshold = suggest_lead_time_threshold(df)
-            df = recalculate(df, st.session_state.lead_time_threshold)
-            st.session_state.df = df
-            st.session_state.file_signature = signature
-            st.session_state.file_name = uploaded.name
-            st.session_state.dropdown_options = load_dropdown_options(uploaded)
-            # A new file may not have the same columns as the last one — reset
-            # column visibility so a stale hidden-column name can't crash the
-            # "Kelola Kolom" multiselect (it errors if its value contains an
-            # option that no longer exists).
-            st.session_state.hidden_columns = []
-            st.session_state.pop("hidden_columns_picker", None)
-            st.toast(f"Berhasil memuat {len(df):,} barang dari '{uploaded.name}'.", icon="✅")
 
     if st.session_state.df is None:
         if st.session_state.ppb_df is not None or st.session_state.npbg_df is not None:
