@@ -18,7 +18,7 @@ from components.charts import (
 )
 from components.data_editor import render_data_editor
 from components.kpi import render_kpis
-from utils.calculations import STATUS_AMAN, STATUS_TIDAK_AMAN, recalculate, suggest_lead_time_threshold
+from utils.calculations import STATUS_TIDAK_AMAN, recalculate, suggest_lead_time_threshold
 from utils.excel_handler import build_template_bytes, load_dropdown_options, load_excel, to_export_bytes
 from utils.insights import generate_insights
 from utils.pdf_export import build_pdf_bytes
@@ -293,12 +293,15 @@ st.markdown(
         align-items: center;
         justify-content: center;
         gap: 18px;
+        text-align: center;
         background: rgba(255, 255, 255, 0.88);
         backdrop-filter: blur(3px);
     }}
     [data-testid="stSpinner"] svg,
-    [data-testid="stSpinner"] i {{
-        display: none;
+    [data-testid="stSpinner"] i,
+    [data-testid="stSpinnerIcon"],
+    [data-testid="stSpinner"] [data-testid="stSpinnerIcon"] {{
+        display: none !important;
     }}
     [data-testid="stSpinner"]::before {{
         content: "";
@@ -310,10 +313,23 @@ st.markdown(
         box-shadow: 0 8px 24px rgba(20, 50, 140, 0.28);
         animation: sw-spin 1s linear infinite;
     }}
+    /* Streamlit wraps the message in one or more nested <div>s; force the whole
+       stack to a centered column so the text sits directly under the spinning
+       logo instead of drifting to the left. */
+    [data-testid="stSpinner"] > div {{
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+    }}
+    [data-testid="stSpinner"] p,
     [data-testid="stSpinner"] div {{
         color: #14328c;
         font-weight: 600;
         font-size: 0.95rem;
+        text-align: center;
+        margin: 0;
     }}
     @keyframes sw-spin {{
         from {{ transform: rotate(0deg); }}
@@ -640,8 +656,7 @@ def process_master_upload(uploaded):
     Returns an error string or None."""
     if not _is_pending(uploaded, st.session_state.file_signature):
         return None
-    with st.spinner("Membaca & memproses Excel Inventory..."):
-        df, error, debug_info = load_excel(uploaded)
+    df, error, debug_info = load_excel(uploaded)
     st.session_state.debug_info = debug_info
     if error:
         # tandai file ini sudah dicoba supaya tidak diproses ulang tiap rerun
@@ -663,8 +678,7 @@ def handle_ppb_upload(uploaded_ppb):
     """Parse an uploaded PPB workbook into session_state (debounced on file signature)."""
     if not _is_pending(uploaded_ppb, st.session_state.ppb_signature):
         return
-    with st.spinner("Membaca file PPB..."):
-        ppb_df, error, debug = load_ppb(uploaded_ppb)
+    ppb_df, error, debug = load_ppb(uploaded_ppb)
     st.session_state.ppb_debug = debug
     if error:
         st.session_state.ppb_signature = _sig(uploaded_ppb)
@@ -746,8 +760,8 @@ _txn_kpi_cards = _kpi_cards
 
 
 def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
-    """Satu halaman ringkasan semua data yang sudah diupload — dibuat sesederhana
-    mungkin supaya langsung dipahami orang awam."""
+    """Satu halaman ringkasan semua data yang sudah diupload dibuat sesederhana
+    mungkin"""
     loaded = []
     if inv_df is not None:
         loaded.append("Inventory")
@@ -761,36 +775,15 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
         + ", ".join(loaded) + ".",
     )
 
-    # ---------- RINGKASAN UTAMA (KPI) ----------
-    cards = []
+    # ---------- RINGKASAN BARANG (semua kartu total dari data inventory) ----------
+    # Angka ringkas PPB & NPBG punya section-nya sendiri di bawah, jadi deret
+    # atas ini khusus inventory biar urutannya jelas.
     if inv_df is not None:
-        total = len(inv_df)
-        perlu_dibeli = int((inv_df["Status"] == STATUS_TIDAK_AMAN).sum())
-        habis = int((inv_df["Sisa Stok"].fillna(0) == 0).sum())
-        aman = int((inv_df["Status"] == STATUS_AMAN).sum())
-        sehat = round(aman / total * 100, 1) if total else 0
-        cards += [
-            ("📦", "Total Barang", f"{total:,}", "jenis barang di data", SERIES_BLUE),
-            ("🛒", "Perlu Dibeli", f"{perlu_dibeli:,}", "stok di bawah batas aman", COLOR_TIDAK_AMAN),
-            ("⛔", "Stok Habis", f"{habis:,}", "sisa stok = 0", COLOR_TIDAK_AMAN if habis else COLOR_AMAN),
-            ("💚", "Kondisi Stok", f"{sehat}%", "barang yang stoknya aman",
-             COLOR_AMAN if sehat >= 80 else (COLOR_WARNING if sehat >= 50 else COLOR_TIDAK_AMAN)),
-        ]
-    if ppb_df is not None:
-        s = ppb_summary(ppb_df)
-        belum = int((ppb_df["Status"].str.lower() != "completed").sum()) if "Status" in ppb_df.columns else 0
-        cards += [
-            ("📋", "Jumlah PPB", f"{s['total_ppb']:,}", "permintaan pembelian", "#7b61c9"),
-            ("⏳", "PPB Belum Selesai", f"{belum:,}", "baris item belum 'Completed'", COLOR_WARNING),
-        ]
-    if npbg_df is not None:
-        s = npbg_summary(npbg_df)
-        nm = max(len(s["per_month"]), 1)
-        cards += [
-            ("📤", "Barang Keluar", f"{s['total_qty']:,.0f}", "total kuantitas (NPBG)", "#eb6834"),
-            ("📅", "Rata-rata / Bulan", f"{s['total_qty'] / nm:,.0f}", f"dari {nm} bulan", "#eb6834"),
-        ]
-    _kpi_cards(cards)
+        render_section_header("Ringkasan Barang", "Kondisi seluruh barang di data inventory.")
+        render_kpis(inv_df)
+    elif ppb_df is not None or npbg_df is not None:
+        st.info("Data inventory belum diupload — ringkasan barang belum bisa ditampilkan. "
+                "Lihat ringkasan PPB & NPBG di bawah.")
 
     # ---------- APA YANG PERLU DILAKUKAN ----------
     todo = []
@@ -1002,8 +995,7 @@ def handle_npbg_upload(uploaded_npbg):
     """Parse an uploaded NPBG workbook into session_state (debounced on signature)."""
     if not _is_pending(uploaded_npbg, st.session_state.npbg_signature):
         return
-    with st.spinner("Membaca file NPBG..."):
-        npbg_df, error, debug = load_npbg(uploaded_npbg)
+    npbg_df, error, debug = load_npbg(uploaded_npbg)
     st.session_state.npbg_debug = debug
     if error:
         st.session_state.npbg_signature = _sig(uploaded_npbg)
@@ -1184,9 +1176,10 @@ def main():
 
     master_error = None
     if do_process:
-        master_error = process_master_upload(uploaded)
-        handle_ppb_upload(uploaded_ppb)
-        handle_npbg_upload(uploaded_npbg)
+        with st.spinner("Membaca & memproses data…"):
+            master_error = process_master_upload(uploaded)
+            handle_ppb_upload(uploaded_ppb)
+            handle_npbg_upload(uploaded_npbg)
         st.session_state["_last_master_error"] = master_error
         st.rerun()  # segarkan sidebar (status ⏳ -> ✅) & badan halaman
 
@@ -1257,8 +1250,6 @@ def main():
                 if hidden_selection and st.button("↺ Tampilkan semua kolom", use_container_width=True):
                     st.session_state.hidden_columns = []
                     st.rerun()
-
-        render_kpis(filtered_view)
 
         debug_info = st.session_state.debug_info
         if debug_info:

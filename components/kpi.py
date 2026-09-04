@@ -22,6 +22,7 @@ def render_kpis(df):
     barang_aman = int((df["Status"] == STATUS_AMAN).sum())
     barang_tidak_aman = int((df["Status"] == STATUS_TIDAK_AMAN).sum())
     barang_bep = int((df["Status"] == STATUS_BEP).sum())
+    stok_habis = int((df["Sisa Stok"].fillna(0) == 0).sum())
     total_stok = df["Sisa Stok"].sum()
     total_safety = df["Safety Stock"].sum()
     total_defisit = df["Defisit"].sum()
@@ -30,18 +31,21 @@ def render_kpis(df):
     # "Barang Aman" di atas, yang tetap Status == AMAN murni.
     health_pct = round(((barang_aman + barang_bep) / total_barang) * 100, 1) if total_barang else 0.0
 
+    # Urutan sengaja: identitas → 4 kelompok status → 3 angka kuantitas.
     cards = [
-        ("📦", "Total Barang", f"{total_barang:,}", "Jumlah kode barang aktif", SERIES_BLUE),
-        ("✅", "Barang Aman", f"{barang_aman:,}", "Stok mencukupi safety stock", COLOR_AMAN),
-        ("🚨", "Barang Tidak Aman", f"{barang_tidak_aman:,}", "Perlu perhatian / replenishment", COLOR_TIDAK_AMAN),
-        ("🎯", "Barang BEP", f"{barang_bep:,}", "Sisa Stok & Safety Stock sama-sama 0", COLOR_BEP),
-        ("🏬", "Total Stok", f"{total_stok:,.0f}", "Total unit tersedia di gudang", SERIES_BLUE),
-        ("🛡️", "Total Safety Stock", f"{total_safety:,.0f}", "Total batas aman minimum", SERIES_ORANGE),
+        ("📦", "Total Barang", f"{total_barang:,}", "jenis barang terdaftar", SERIES_BLUE),
+        ("✅", "Barang Aman", f"{barang_aman:,}", "stok cukup dari batas aman", COLOR_AMAN),
+        ("🛒", "Perlu Dibeli", f"{barang_tidak_aman:,}", "stok di bawah batas aman", COLOR_TIDAK_AMAN),
+        ("⛔", "Stok Habis", f"{stok_habis:,}", "sisa stok = 0",
+         COLOR_TIDAK_AMAN if stok_habis else COLOR_AMAN),
+        ("🎯", "Barang BEP", f"{barang_bep:,}", "belum ada kebijakan stok", COLOR_BEP),
+        ("🏬", "Total Stok", f"{total_stok:,.0f}", "unit tersedia di gudang", SERIES_BLUE),
+        ("🛡️", "Total Batas Aman", f"{total_safety:,.0f}", "gabungan seluruh safety stock", SERIES_ORANGE),
         (
             "📉",
-            "Defisit Stok",
+            "Total Kekurangan",
             f"{total_defisit:,.0f}",
-            "Total kekurangan dari safety stock",
+            "unit di bawah batas aman",
             COLOR_TIDAK_AMAN if total_defisit > 0 else COLOR_AMAN,
         ),
     ]
@@ -63,7 +67,7 @@ def render_kpis(df):
         f"""
         <div class="sw-health">
           <div class="sw-health-label">
-            <span>💡 Skor Kesehatan Inventory</span>
+            <span>💚 Kondisi Stok Keseluruhan</span>
             <span class="sw-health-pct" style="color:{bar_color};">{health_pct}% Aman — {health_word}</span>
           </div>
           <div class="sw-health-track">
