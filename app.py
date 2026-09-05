@@ -406,8 +406,9 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         result = result[result["Letak Gudang"].isin(filters["gudang"])]
     if filters["status"]:
         result = result[result["Status"].isin(filters["status"])]
-    if filters.get("status_pengadaan") and "Status Pengadaan" in result.columns:
-        result = result[result["Status Pengadaan"].isin(filters["status_pengadaan"])]
+    if filters.get("ppb_presence") in ("Ada PPB", "Belum ada PPB") and "PPB" in result.columns:
+        has_ppb = result["PPB"] == "ADA"
+        result = result[has_ppb if filters["ppb_presence"] == "Ada PPB" else ~has_ppb]
     if filters.get("npbg_presence") in ("Ada NPBG", "Belum ada NPBG") and "NPBG" in result.columns:
         has_npbg = result["NPBG"].notna()
         result = result[has_npbg if filters["npbg_presence"] == "Ada NPBG" else ~has_npbg]
@@ -455,13 +456,14 @@ def render_sidebar(df: pd.DataFrame):
     gudang = st.sidebar.multiselect("Letak Gudang", _filter_options(df, "Letak Gudang"))
     status = st.sidebar.multiselect("Status", _filter_options(df, "Status"))
 
-    status_pengadaan = []
-    if st.session_state.ppb_df is not None and "Status Pengadaan" in df.columns:
-        status_pengadaan = st.sidebar.multiselect(
-            "Status Pengadaan",
-            _filter_options(df, "Status Pengadaan"),
-            help="BELUM DI-PPB / MENUNGGU RI / SEBAGIAN DITERIMA / SUDAH DITERIMA — "
-            "dari pencocokan Deskripsi Barang ke file PPB & RI.",
+    ppb_presence = "Semua"
+    if st.session_state.ppb_df is not None and "PPB" in df.columns:
+        n_ada = int((df["PPB"] == "ADA").sum())
+        ppb_presence = st.sidebar.radio(
+            "Barang dengan PPB",
+            ["Semua", "Ada PPB", "Belum ada PPB"],
+            horizontal=True,
+            help=f"{n_ada:,} barang punya data PPB (dicocokkan dari Deskripsi Barang ke file PPB).",
         )
 
     npbg_presence = "Semua"
@@ -510,8 +512,8 @@ def render_sidebar(df: pd.DataFrame):
 
     any_active = bool(
         kategori_induk or kategori_anak1 or kategori_anak2 or kategori_anak3 or uom
-        or gudang or status or status_pengadaan or kode_search or desk_search
-        or npbg_presence != "Semua"
+        or gudang or status or kode_search or desk_search
+        or ppb_presence != "Semua" or npbg_presence != "Semua"
         or lead_time_range != (lt_min_data, lt_max_data)
         or selisih_range != (sel_min_data, sel_max_data)
     )
@@ -524,7 +526,7 @@ def render_sidebar(df: pd.DataFrame):
         "uom": uom,
         "gudang": gudang,
         "status": status,
-        "status_pengadaan": status_pengadaan,
+        "ppb_presence": ppb_presence,
         "npbg_presence": npbg_presence,
         "kode_search": kode_search,
         "desk_search": desk_search,
