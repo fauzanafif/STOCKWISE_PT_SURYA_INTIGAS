@@ -25,6 +25,8 @@ from utils.pdf_export import build_pdf_bytes
 from utils.npbg_handler import NPBG_DISPLAY_COLUMNS, load_npbg, npbg_summary
 from utils.npbg_match import attach_npbg_column, build_count_map
 from utils.ppb_handler import PPB_DISPLAY_COLUMNS, load_ppb, ppb_summary
+from utils.ppb_ri_match import STATUS_BELUM_PPB, attach_procurement_columns, build_procurement_status
+from utils.ri_handler import load_ri
 from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING, SERIES_BLUE
 
 LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
@@ -356,6 +358,9 @@ def init_state():
         ("ppb_file_name", None),
         ("ppb_signature", None),
         ("ppb_debug", None),
+        # --- RI (Receive Item) — sheet "RI" di dalam workbook PPB yang sama ---
+        ("ri_df", None),
+        ("ri_debug", None),
         # --- NPBG (Nota Pengeluaran Barang Gudang) ---
         ("npbg_df", None),
         ("npbg_file_name", None),
@@ -401,8 +406,6 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         result = result[result["Letak Gudang"].isin(filters["gudang"])]
     if filters["status"]:
         result = result[result["Status"].isin(filters["status"])]
-    if filters["perlu_blueprint"]:
-        result = result[result["Perlu Blueprint?"].isin(filters["perlu_blueprint"])]
     if filters.get("npbg_presence") in ("Ada NPBG", "Belum ada NPBG") and "NPBG" in result.columns:
         has_npbg = result["NPBG"].notna()
         result = result[has_npbg if filters["npbg_presence"] == "Ada NPBG" else ~has_npbg]
@@ -432,8 +435,6 @@ def _filter_options(df: pd.DataFrame, col: str, extra_options: dict = None) -> l
 
 def render_sidebar(df: pd.DataFrame):
     st.sidebar.header("🔎 Filter Inventory")
-    st.sidebar.caption("Berlaku untuk tab Dashboard, Data Inventory, dan Procurement. "
-                       "Tab PPB & NPBG punya filter sendiri di dalamnya.")
     dropdown_options = st.session_state.dropdown_options
 
     kategori_induk = st.sidebar.multiselect(
@@ -451,7 +452,6 @@ def render_sidebar(df: pd.DataFrame):
     uom = st.sidebar.multiselect("UoM", _filter_options(df, "UoM", dropdown_options))
     gudang = st.sidebar.multiselect("Letak Gudang", _filter_options(df, "Letak Gudang"))
     status = st.sidebar.multiselect("Status", _filter_options(df, "Status"))
-    perlu_blueprint = st.sidebar.multiselect("Perlu Blueprint?", _filter_options(df, "Perlu Blueprint?"))
 
     npbg_presence = "Semua"
     if st.session_state.npbg_df is not None and "NPBG" in df.columns:
@@ -487,7 +487,6 @@ def render_sidebar(df: pd.DataFrame):
     selisih_range = (sel_min, sel_max)
 
     st.sidebar.divider()
-    st.sidebar.header("Pengaturan Prioritas")
     if st.session_state.lead_time_threshold is None:
         st.session_state.lead_time_threshold = suggest_lead_time_threshold(df)
     st.session_state.lead_time_threshold = st.sidebar.number_input(
@@ -500,7 +499,7 @@ def render_sidebar(df: pd.DataFrame):
 
     any_active = bool(
         kategori_induk or kategori_anak1 or kategori_anak2 or kategori_anak3 or uom
-        or gudang or status or perlu_blueprint or kode_search or desk_search
+        or gudang or status or kode_search or desk_search
         or npbg_presence != "Semua"
         or lead_time_range != (lt_min_data, lt_max_data)
         or selisih_range != (sel_min_data, sel_max_data)
@@ -514,7 +513,6 @@ def render_sidebar(df: pd.DataFrame):
         "uom": uom,
         "gudang": gudang,
         "status": status,
-        "perlu_blueprint": perlu_blueprint,
         "npbg_presence": npbg_presence,
         "kode_search": kode_search,
         "desk_search": desk_search,
@@ -575,6 +573,32 @@ def with_npbg_column(inv_df: pd.DataFrame) -> pd.DataFrame:
     aman_desc = tuple(sorted({str(x) for x in inv_df.loc[inv_df["Status"] == "AMAN", "Deskripsi Barang"]}))
     count_map = _npbg_count_map(tuple(npbg_df["Deskripsi Barang"].tolist()), aman_desc)
     return attach_npbg_column(inv_df, count_map=count_map)
+
+
+@st.cache_data(show_spinner=False)
+def _procurement_status_map(inv_descriptions: tuple, ppb_df: pd.DataFrame, ri_df: pd.DataFrame) -> dict:
+    """Fuzzy-match tiap deskripsi barang — SEMUA Status Inventory, bukan cuma
+    TIDAK AMAN — ke PPB & RI (dicache: hanya dihitung ulang kalau daftar
+    deskripsi inventory atau file PPB/RI berubah, bukan tiap kali tabel
+    diedit)."""
+    return build_procurement_status(inv_descriptions, ppb_df, ri_df)
+
+
+def with_procurement_columns(inv_df: pd.DataFrame) -> pd.DataFrame:
+    """Tambahkan kolom PPB/Tgl PPB/No PPB/Qty PPB/RI/Tgl RI/No RI/Qty RI/Status
+    Pengadaan ke inventory df, untuk SEMUA barang apa pun Status-nya (AMAN
+    tetap bisa sedang/baru saja diproses pembelian, bukan cuma TIDAK AMAN)."""
+    ppb_df = st.session_state.ppb_df
+    if (
+        inv_df is None
+        or "Deskripsi Barang" not in inv_df.columns
+        or ppb_df is None
+        or ppb_df.empty
+    ):
+        return attach_procurement_columns(inv_df, None, None)
+    inv_desc = tuple(sorted({str(x) for x in inv_df["Deskripsi Barang"]}))
+    status_map = _procurement_status_map(inv_desc, ppb_df, st.session_state.ri_df)
+    return attach_procurement_columns(inv_df, status_map=status_map)
 
 
 def _md_inline(text: str) -> str:
@@ -707,6 +731,7 @@ def process_master_upload(uploaded):
     st.session_state.lead_time_threshold = suggest_lead_time_threshold(df)
     df = recalculate(df, st.session_state.lead_time_threshold)
     df = with_npbg_column(df)
+    df = with_procurement_columns(df)
     st.session_state.df = df
     st.session_state.file_signature = _sig(uploaded)
     st.session_state.file_name = uploaded.name
@@ -733,6 +758,18 @@ def handle_ppb_upload(uploaded_ppb):
     st.toast(
         f"PPB dimuat: {ppb_df['No PPB'].nunique():,} PPB / {len(ppb_df):,} baris item.", icon="📋"
     )
+
+    # RI (Receive Item) ada di sheet lain pada workbook PPB yang sama (mis.
+    # `1. PPB - RI.xlsx`). Opsional — kalau sheet "RI" tidak ada, load_ri
+    # mengembalikan (None, None, ...) tanpa error; error hanya kalau sheet RI
+    # ADA tapi rusak strukturnya.
+    ri_df, ri_error, ri_debug = load_ri(uploaded_ppb)
+    st.session_state.ri_debug = ri_debug
+    st.session_state.ri_df = ri_df
+    if ri_error:
+        st.sidebar.error(f"RI: {ri_error}")
+    elif ri_df is not None:
+        st.toast(f"RI dimuat: {ri_df['No RI'].nunique():,} RI / {len(ri_df):,} baris item.", icon="📥")
 
 
 @st.cache_data(show_spinner=False)
@@ -822,7 +859,6 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
     # Angka ringkas PPB & NPBG punya section-nya sendiri di bawah, jadi deret
     # atas ini khusus inventory biar urutannya jelas.
     if inv_df is not None:
-        render_section_header("Ringkasan Barang", "Kondisi seluruh barang di data inventory.")
         render_kpis(inv_df)
     elif ppb_df is not None or npbg_df is not None:
         st.info("Data inventory belum diupload — ringkasan barang belum bisa ditampilkan. "
@@ -838,6 +874,14 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
         habis_df = inv_df[inv_df["Sisa Stok"].fillna(0) == 0]
         if not habis_df.empty:
             todo.append(("error", f"⛔ **{len(habis_df):,} barang** stoknya benar-benar habis (0)."))
+    tidak_aman_belum_ppb = pd.DataFrame()
+    if inv_df is not None and ppb_df is not None and "Status Pengadaan" in inv_df.columns:
+        tidak_aman_belum_ppb = inv_df[
+            (inv_df["Status"] == STATUS_TIDAK_AMAN) & (inv_df["Status Pengadaan"] == STATUS_BELUM_PPB)
+        ]
+        if not tidak_aman_belum_ppb.empty:
+            todo.append(("error", f"🚨 **{len(tidak_aman_belum_ppb):,} Barang Tidak Aman Belum di-PPB** — "
+                                  f"di bawah batas aman dan belum ada permintaan pembelian sama sekali."))
     if ppb_df is not None and "Status" in ppb_df.columns:
         belum = int((ppb_df["Status"].str.lower() != "completed").sum())
         if belum:
@@ -848,6 +892,20 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
     st.write("")
     render_section_header("Yang Perlu Diperhatikan", "Hal penting yang butuh tindak lanjut.")
     render_insight_cards(todo)
+
+    if ppb_df is not None and inv_df is not None and "Status Pengadaan" in inv_df.columns:
+        with st.expander(
+            f"🚨 Detail: Tidak Aman — Belum di-PPB ({len(tidak_aman_belum_ppb):,} barang)"
+        ):
+            if tidak_aman_belum_ppb.empty:
+                st.success("✅ Semua barang TIDAK AMAN sudah punya PPB.")
+            else:
+                detail_cols = ["Kode Barang", "Deskripsi Barang", "Safety Stock", "Sisa Stok",
+                               "Selisih", "Defisit", "Lead Time", "Priority Level", "Status Pengadaan"]
+                cols = [c for c in detail_cols if c in tidak_aman_belum_ppb.columns]
+                sort_col = "Priority Score" if "Priority Score" in tidak_aman_belum_ppb.columns else cols[0]
+                detail_view = tidak_aman_belum_ppb.sort_values(sort_col, ascending=False)[cols]
+                st.dataframe(detail_view, use_container_width=True, hide_index=True)
 
     # ---------- KONDISI STOK ----------
     if inv_df is not None:
@@ -1169,10 +1227,6 @@ def main():
         unsafe_allow_html=True,
     )
     st.sidebar.header("📤 Upload Data")
-    st.sidebar.caption(
-        "Pilih file dulu — belum langsung diproses. Klik **Proses** di bawah, "
-        "atau isi ketiga slot sekaligus untuk proses otomatis."
-    )
 
     uploaded = st.sidebar.file_uploader(
         "1. Excel Inventory", type=["xlsx", "xls"],
@@ -1198,15 +1252,6 @@ def main():
     ]
     pending = [name for name, f, sig, _done, _n in slots if _is_pending(f, sig)]
     n_filled = sum(1 for _n, f, *_ in slots if f is not None)
-
-    status_lines = []
-    for name, f, sig, done, fname in slots:
-        if _is_pending(f, sig):
-            status_lines.append(f"⏳ **{name}** — `{f.name}` menunggu diproses")
-        elif done:
-            status_lines.append(f"✅ **{name}** — `{fname}`")
-    if status_lines:
-        st.sidebar.markdown("  \n".join(status_lines))
 
     # tombol proses kalau ada yang menunggu; auto-proses kalau ketiga slot terisi
     auto = n_filled == 3 and bool(pending)
@@ -1317,9 +1362,10 @@ def main():
         )
         full_df = merge_edits(full_df, filtered_view, edited_view)
         full_df = recalculate(full_df, st.session_state.lead_time_threshold)
-        # NPBG dicocokkan ulang tiap rerun (di-cache): Status bisa berubah karena
-        # edit, dan file NPBG bisa baru diupload.
+        # NPBG & PPB/RI dicocokkan ulang tiap rerun (di-cache): Status bisa
+        # berubah karena edit, dan file NPBG/PPB/RI bisa baru diupload.
         full_df = with_npbg_column(full_df)
+        full_df = with_procurement_columns(full_df)
         st.session_state.df = full_df
 
     filtered_final = apply_filters(full_df, filters)

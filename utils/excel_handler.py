@@ -49,6 +49,10 @@ CALCULATED_COLUMNS = [
     # Diisi terpisah (utils/npbg_match) dari file NPBG, bukan oleh recalculate —
     # tercantum di sini supaya recalculate tidak memaksa nilainya jadi teks.
     "NPBG",
+    # Diisi terpisah (utils/ppb_ri_match) dari file PPB & RI — sama alasannya.
+    "PPB", "Tgl PPB", "No PPB", "Qty PPB",
+    "RI", "Tgl RI", "No RI", "Qty RI",
+    "Status Pengadaan",
 ]
 
 REFERENCE_COLUMNS = ["Blueprint IMG", "Blueprint Detail PDF", "Blueprint 3D View"]

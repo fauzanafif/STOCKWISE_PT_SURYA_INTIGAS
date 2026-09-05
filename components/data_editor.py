@@ -63,6 +63,46 @@ def build_column_config(df, extra_options=None):
             disabled=True,
             width="small",
         ),
+        "PPB": st.column_config.TextColumn(
+            "PPB", help="ADA = ditemukan minimal satu PPB yang cocok (dicocokkan dari "
+            "Deskripsi Barang). Kosong = belum pernah di-PPB.",
+            disabled=True, width="small",
+        ),
+        "Tgl PPB": st.column_config.DateColumn(
+            "Tgl PPB", help="Tanggal PPB paling relevan/terakhir yang cocok.",
+            disabled=True, width="small",
+        ),
+        "No PPB": st.column_config.TextColumn(
+            "No PPB", help="Nomor PPB paling relevan/terakhir yang cocok.",
+            disabled=True, width="medium",
+        ),
+        "Qty PPB": st.column_config.NumberColumn(
+            "Qty PPB", help="Total kuantitas dari seluruh baris PPB yang cocok.",
+            format="%.0f", disabled=True, width="small",
+        ),
+        "RI": st.column_config.TextColumn(
+            "RI", help="ADA = ditemukan minimal satu Receive Item (RI) yang cocok. "
+            "Kosong = belum ada barang diterima untuk PPB ini.",
+            disabled=True, width="small",
+        ),
+        "Tgl RI": st.column_config.DateColumn(
+            "Tgl RI", help="Tanggal RI paling relevan/terakhir yang cocok.",
+            disabled=True, width="small",
+        ),
+        "No RI": st.column_config.TextColumn(
+            "No RI", help="Nomor RI paling relevan/terakhir yang cocok.",
+            disabled=True, width="medium",
+        ),
+        "Qty RI": st.column_config.NumberColumn(
+            "Qty RI", help="Total kuantitas dari seluruh baris RI yang cocok.",
+            format="%.0f", disabled=True, width="small",
+        ),
+        "Status Pengadaan": st.column_config.TextColumn(
+            "Status Pengadaan",
+            help="BELUM DI-PPB / MENUNGGU RI / SEBAGIAN DITERIMA / SUDAH DITERIMA — "
+            "diturunkan dari kolom PPB & RI di kiri.",
+            disabled=True, width="medium",
+        ),
     }
     for col in REFERENCE_COLUMNS:
         config[col] = st.column_config.TextColumn(col, disabled=True, width="medium")

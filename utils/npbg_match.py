@@ -16,8 +16,6 @@ harus identik dulu sebelum similarity diperiksa.
 """
 from __future__ import annotations
 
-import re
-import unicodedata
 from collections import defaultdict
 from difflib import SequenceMatcher
 
@@ -25,89 +23,17 @@ import numpy as np
 import pandas as pd
 
 from utils.calculations import STATUS_AMAN
+from utils.text_match import AUTO_MATCH, REVIEW_MATCH, is_match, match_verdict, normalize_text, similarity, spec_key
 
 NPBG_COLUMN = "NPBG"
 
-AUTO_MATCH = 0.90
-REVIEW_MATCH = 0.80
-
-# satuan yang sering ditulis nyambung / terpisah dari angkanya
-_UNIT_GLUE = re.compile(
-    r"(\d)\s+(m3|m2|mm|cm|km|kg|gr|ltr|lt|ml|cc|inch|in|ft|pcs|pc|set|kva|kwh|kw|"
-    r"hp|pk|volt|watt|amp|rpm|mah|ah|ph|bar|psi|m|l|v|w|a)\b"
-)
-_NUMBER = re.compile(r"\d+(?:\.\d+)?")
-_NON_ALNUM = re.compile(r"[^a-z0-9]+")
-_X_BETWEEN_NUMS = re.compile(r"(?<=\d)\s*x\s*(?=\d)")
-
-
-def normalize_text(value) -> str:
-    """Turunkan deskripsi ke bentuk kanonik untuk dibandingkan."""
-    if value is None:
-        return ""
-    text = unicodedata.normalize("NFKD", str(value))
-    text = text.encode("ascii", "ignore").decode("ascii")  # buang aksen
-    text = text.lower()
-    text = text.replace("³", "3").replace("²", "2")
-    text = re.sub(r"(\d),(\d)", r"\1.\2", text)   # 1,5 -> 1.5
-    text = _NON_ALNUM.sub(" ", text)              # tanda baca -> spasi
-    text = re.sub(r"\s+", " ", text).strip()
-    text = _UNIT_GLUE.sub(r"\1\2", text)          # "6 m3" -> "6m3"
-    text = _X_BETWEEN_NUMS.sub("x", text)         # "10 x 100" -> "10x100"
-    return text
-
-
-def spec_key(norm: str) -> tuple:
-    """Kumpulan angka (terurut) di dalam nama — penjaga kapasitas/ukuran.
-    Dua deskripsi dengan angka berbeda tidak pernah dianggap barang yang sama."""
-    return tuple(sorted(_NUMBER.findall(norm)))
-
-
-def _token_sorted(norm: str) -> str:
-    return " ".join(sorted(norm.split()))
-
-
-def similarity(a: str, b: str) -> float:
-    """Rasio kemiripan 0..1, tahan terhadap urutan kata yang sedikit berbeda."""
-    if not a or not b:
-        return 0.0
-    direct = SequenceMatcher(None, a, b).ratio()
-    if direct >= AUTO_MATCH or direct < 0.6:
-        return direct
-    reordered = SequenceMatcher(None, _token_sorted(a), _token_sorted(b)).ratio()
-    return max(direct, reordered)
-
-
-def match_verdict(sim: float) -> str:
-    if sim >= AUTO_MATCH:
-        return "MATCH"
-    if sim >= REVIEW_MATCH:
-        return "REVIEW"
-    return "NO_MATCH"
-
-
-def _is_match(a_norm: str, a_tokens: frozenset, b_norm: str, sm: SequenceMatcher) -> bool:
-    """Versi cepat dari `match_verdict(similarity(...)) == "MATCH"` untuk loop
-    besar. Gate murah dulu (harus berbagi minimal satu kata utuh; panjang tidak
-    terlalu jauh), baru SequenceMatcher.
-    """
-    b_tokens = frozenset(b_norm.split())
-    if a_tokens and b_tokens and not (a_tokens & b_tokens):
-        return False
-    la, lb = len(a_norm), len(b_norm)
-    if abs(la - lb) > 0.35 * max(la, lb, 1):
-        return False
-    sm.set_seq1(b_norm)
-    if sm.real_quick_ratio() < AUTO_MATCH:
-        return False
-    quick = sm.quick_ratio()
-    if quick < AUTO_MATCH:
-        # ratio() can't reach AUTO_MATCH either (quick_ratio is an upper bound);
-        # only a word-order-different variant could still match.
-        if quick < 0.6:
-            return False
-        return SequenceMatcher(None, _token_sorted(a_norm), _token_sorted(b_norm)).ratio() >= AUTO_MATCH
-    return sm.ratio() >= AUTO_MATCH
+# Re-exported for backward compatibility — the actual implementations moved to
+# utils.text_match (shared with utils.ppb_ri_match) so the matching rules live
+# in exactly one place.
+__all__ = [
+    "NPBG_COLUMN", "AUTO_MATCH", "REVIEW_MATCH", "normalize_text", "spec_key", "similarity",
+    "match_verdict", "build_npbg_buckets", "count_for", "build_count_map", "attach_npbg_column",
+]
 
 
 def build_npbg_buckets(npbg_descriptions) -> dict:
@@ -135,7 +61,7 @@ def count_for(norm: str, buckets: dict):
     total = 0
     matched = False
     for cand_norm, cnt in candidates:
-        if cand_norm == norm or _is_match(norm, tokens, cand_norm, sm):
+        if cand_norm == norm or is_match(norm, tokens, cand_norm, sm):
             total += cnt
             matched = True
     return total if matched else pd.NA
