@@ -18,14 +18,20 @@ from components.charts import (
 )
 from components.data_editor import render_data_editor
 from components.kpi import render_kpis
-from utils.calculations import STATUS_TIDAK_AMAN, recalculate, suggest_lead_time_threshold
+from utils.calculations import STATUS_BEP, STATUS_TIDAK_AMAN, recalculate, suggest_lead_time_threshold
 from utils.excel_handler import build_template_bytes, load_dropdown_options, load_excel, to_export_bytes
 from utils.insights import generate_insights
 from utils.pdf_export import build_pdf_bytes
 from utils.npbg_handler import NPBG_DISPLAY_COLUMNS, load_npbg, npbg_summary
 from utils.npbg_match import attach_npbg_column, build_count_map
 from utils.ppb_handler import PPB_DISPLAY_COLUMNS, load_ppb, ppb_summary
-from utils.ppb_ri_match import STATUS_BELUM_PPB, attach_procurement_columns, build_procurement_status
+from utils.ppb_ri_match import (
+    STATUS_BELUM_PPB,
+    STATUS_MENUNGGU_RI,
+    STATUS_SEBAGIAN_DITERIMA,
+    attach_procurement_columns,
+    build_procurement_status,
+)
 from utils.ri_handler import load_ri
 from utils.theme import COLOR_AMAN, COLOR_NEUTRAL, COLOR_TIDAK_AMAN, COLOR_WARNING, SERIES_BLUE
 
@@ -1034,6 +1040,75 @@ def render_unified_dashboard(inv_df, ppb_df, npbg_df, lead_time_threshold):
         with cc2:
             render_chart("Divisi Pemakai Terbanyak (Top 10)", "",
                          _txn_bar(s["per_divisi"], "Baris item"), key="dash_npbg_divisi")
+
+    # ---------- KESIMPULAN SINGKAT (paling bawah) ----------
+    # Rekap penutup: gabungan angka-angka penting dari seluruh bagian di atas
+    # jadi beberapa kalimat sederhana, buat yang cuma mau tahu "jadi gimana"
+    # tanpa harus scroll & mikirin istilah gudang/procurement.
+    if inv_df is not None or ppb_df is not None or npbg_df is not None:
+        st.divider()
+        render_section_header("Kesimpulan Singkat",
+                              "Rangkuman dari semua bagian di atas, dalam beberapa kalimat.")
+        render_insight_cards(_dashboard_recap(inv_df, ppb_df, npbg_df))
+
+
+def _dashboard_recap(inv_df, ppb_df, npbg_df) -> list:
+    """Beberapa kalimat penutup untuk orang awam — gabungan kondisi stok,
+    proses pembelian (PPB/RI), dan aktivitas gudang (NPBG) jadi satu simpulan."""
+    points = []
+
+    if inv_df is not None and len(inv_df):
+        total = len(inv_df)
+        aman = int((inv_df["Status"] == "AMAN").sum())
+        bep = int((inv_df["Status"] == STATUS_BEP).sum())
+        unsafe = inv_df[inv_df["Status"] == STATUS_TIDAK_AMAN]
+        pct_baik = round((aman + bep) / total * 100) if total else 0
+
+        if unsafe.empty:
+            points.append(("success", f"✅ Semua **{total:,} barang** kondisinya baik — "
+                                      f"nggak ada yang stoknya kurang."))
+        else:
+            sev = "warning" if pct_baik >= 50 else "error"
+            points.append((sev, f"📦 Dari **{total:,} barang**, sekitar **{pct_baik}%** kondisinya "
+                                f"baik. Sisanya, **{len(unsafe):,} barang**, stoknya kurang dan perlu dibeli."))
+
+        if not unsafe.empty and "Status Pengadaan" in inv_df.columns and ppb_df is not None:
+            belum_ppb = int((unsafe["Status Pengadaan"] == STATUS_BELUM_PPB).sum())
+            if belum_ppb:
+                points.append(("error", f"🚨 Dari barang yang perlu dibeli itu, **{belum_ppb:,}** "
+                                        f"malah belum diajukan permintaan pembeliannya sama sekali — "
+                                        f"ini yang paling perlu ditindaklanjuti duluan."))
+            else:
+                points.append(("success", "✅ Kabar baiknya, semua barang yang perlu dibeli "
+                                          "**sudah** diajukan permintaan pembeliannya."))
+
+        if "Status Pengadaan" in inv_df.columns and ppb_df is not None:
+            proses = inv_df[inv_df["Status Pengadaan"].isin([STATUS_MENUNGGU_RI, STATUS_SEBAGIAN_DITERIMA])]
+            if not proses.empty:
+                points.append(("info", f"⏳ **{len(proses):,} barang** lagi dalam proses pembelian "
+                                       f"— sudah dipesan (PPB), tinggal tunggu barangnya datang."))
+
+    if npbg_df is not None and len(npbg_df):
+        s = npbg_summary(npbg_df)
+        months = sorted(s["per_month"].items()) if s["per_month"] else []
+        if len(months) >= 2:
+            last_qty = months[-1][1]
+            avg_qty = sum(v for _, v in months[:-1]) / max(len(months) - 1, 1)
+            if avg_qty > 0:
+                ratio = last_qty / avg_qty
+                if ratio >= 1.3:
+                    points.append(("warning", f"📤 Barang keluar gudang bulan terakhir lebih ramai "
+                                              f"dari biasanya ({last_qty:,.0f} unit, biasanya "
+                                              f"sekitar {avg_qty:,.0f} unit/bulan)."))
+                elif ratio <= 0.7:
+                    points.append(("info", f"📤 Barang keluar gudang bulan terakhir lebih sepi dari "
+                                           f"biasanya ({last_qty:,.0f} unit, biasanya sekitar "
+                                           f"{avg_qty:,.0f} unit/bulan)."))
+
+    if not points:
+        points.append(("info", "ℹ️ Belum cukup data untuk membuat rekap."))
+    return points
+
 
 def _txn_empty_state(judul: str, file_hint: str, sheet: str, kolom_kunci: str):
     st.info(f"👈 Upload file **{judul}** dulu di sidebar.")
