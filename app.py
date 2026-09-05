@@ -773,8 +773,8 @@ def handle_ppb_upload(uploaded_ppb):
 
 
 @st.cache_data(show_spinner=False)
-def _cached_ppb_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(index=False).encode("utf-8-sig")
+def _cached_ppb_excel(df: pd.DataFrame) -> bytes:
+    return to_export_bytes(df)
 
 
 # ---- Shared helpers for the PPB / NPBG (transaction) tabs ----
@@ -1080,9 +1080,11 @@ def render_ppb_view(ppb_df: pd.DataFrame):
         st.dataframe(display, use_container_width=True, hide_index=True, height=430)
 
         st.download_button(
-            "⬇️ Download CSV (sesuai filter)",
-            data=_cached_ppb_csv(view[show_cols]),
-            file_name="ppb_export.csv", mime="text/csv", key="ppb_csv_download",
+            "⬇️ Download Excel (sesuai filter)",
+            data=_cached_ppb_excel(view[show_cols]),
+            file_name="ppb_export.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="ppb_excel_download",
         )
 
     debug = st.session_state.ppb_debug
@@ -1113,8 +1115,8 @@ def handle_npbg_upload(uploaded_npbg):
 
 
 @st.cache_data(show_spinner=False)
-def _cached_npbg_csv(df: pd.DataFrame) -> bytes:
-    return df.to_csv(index=False).encode("utf-8-sig")
+def _cached_npbg_excel(df: pd.DataFrame) -> bytes:
+    return to_export_bytes(df)
 
 
 def render_npbg_view(npbg_df: pd.DataFrame):
@@ -1166,9 +1168,11 @@ def render_npbg_view(npbg_df: pd.DataFrame):
         st.dataframe(display, use_container_width=True, hide_index=True, height=430)
 
         st.download_button(
-            "⬇️ Download CSV (sesuai filter)",
-            data=_cached_npbg_csv(view[show_cols]),
-            file_name="npbg_export.csv", mime="text/csv", key="npbg_csv_download",
+            "⬇️ Download Excel (sesuai filter)",
+            data=_cached_npbg_excel(view[show_cols]),
+            file_name="npbg_export.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="npbg_excel_download",
         )
 
     debug = st.session_state.npbg_debug
